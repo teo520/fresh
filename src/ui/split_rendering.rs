@@ -80,6 +80,19 @@ struct LineRenderOutput {
     content_lines_rendered: usize,
 }
 
+struct SplitLayout {
+    tabs_rect: Rect,
+    content_rect: Rect,
+    scrollbar_rect: Rect,
+}
+
+struct ViewPreferences {
+    view_mode: ViewMode,
+    compose_width: Option<u16>,
+    compose_column_guides: Option<Vec<u16>>,
+    view_transform: Option<ViewTransformPayload>,
+}
+
 struct LineRenderInput<'a> {
     state: &'a EditorState,
     theme: &'a crate::theme::Theme,
@@ -150,50 +163,14 @@ impl SplitRenderer {
         for (split_id, buffer_id, split_area) in visible_buffers {
             let is_active = split_id == active_split_id;
 
-            // Reserve 1 line at top for tabs, 1 column on right for scrollbar
-            let tabs_height = 1u16;
-            let scrollbar_width = 1u16;
-
-            // Tabs area at top of split
-            let tabs_rect = Rect::new(split_area.x, split_area.y, split_area.width, tabs_height);
-
-            // Content area below tabs
-            let content_rect = Rect::new(
-                split_area.x,
-                split_area.y + tabs_height,
-                split_area.width.saturating_sub(scrollbar_width),
-                split_area.height.saturating_sub(tabs_height),
-            );
-
-            // Scrollbar on the right side of content (not tabs)
-            let scrollbar_rect = Rect::new(
-                split_area.x + split_area.width.saturating_sub(scrollbar_width),
-                split_area.y + tabs_height,
-                scrollbar_width,
-                split_area.height.saturating_sub(tabs_height),
-            );
-
-            // Get the open buffers for this split from split_view_states
-            let (split_buffers, tab_scroll_offset) = if let Some(view_states) = split_view_states {
-                if let Some(view_state) = view_states.get(&split_id) {
-                    // Use the split's open_buffers list and tab_scroll_offset
-                    (
-                        view_state.open_buffers.clone(),
-                        view_state.tab_scroll_offset,
-                    )
-                } else {
-                    // No view state for this split - just show the current buffer
-                    (vec![buffer_id], 0)
-                }
-            } else {
-                // No view states at all - just show the current buffer
-                (vec![buffer_id], 0)
-            };
+            let layout = Self::split_layout(split_area);
+            let (split_buffers, tab_scroll_offset) =
+                Self::split_buffers_for_tabs(split_view_states, split_id, buffer_id);
 
             // Render tabs for this split
             TabsRenderer::render_for_split(
                 frame,
-                tabs_rect,
+                layout.tabs_rect,
                 &split_buffers,
                 buffers,
                 buffer_metadata,
@@ -208,89 +185,26 @@ impl SplitRenderer {
             let event_log_opt = event_logs.get_mut(&buffer_id);
 
             if let Some(state) = state_opt {
-                // For inactive splits, temporarily swap in the split's view state (cursors + viewport)
-                // This allows each split to show its own cursor position
-                let saved_cursors;
-                let saved_viewport;
-                if !is_active {
-                    if let Some(view_states) = split_view_states {
-                        if let Some(view_state) = view_states.get(&split_id) {
-                            saved_cursors = Some(std::mem::replace(
-                                &mut state.cursors,
-                                view_state.cursors.clone(),
-                            ));
-                            saved_viewport = Some(std::mem::replace(
-                                &mut state.viewport,
-                                view_state.viewport.clone(),
-                            ));
-                        } else {
-                            saved_cursors = None;
-                            saved_viewport = None;
-                        }
-                    } else {
-                        saved_cursors = None;
-                        saved_viewport = None;
-                    }
-                } else {
-                    saved_cursors = None;
-                    saved_viewport = None;
-                }
-
-                // Sync viewport size with actual render area
-                // This ensures the viewport matches the real available space,
-                // automatically accounting for menu bar, tabs, status bar, etc.
-                if state.viewport.width != content_rect.width
-                    || state.viewport.height != content_rect.height
-                {
-                    state
-                        .viewport
-                        .resize(content_rect.width, content_rect.height);
-                    // Re-ensure cursor is visible after resize
-                    let primary = *state.cursors.primary();
-                    state.viewport.ensure_visible(&mut state.buffer, &primary);
-                }
-
-                // Split-specific view prefs
-                let (view_mode, compose_width, compose_column_guides, view_transform) =
-                    if let Some(view_states) = split_view_states {
-                        if let Some(view_state) = view_states.get(&split_id) {
-                            (
-                                view_state.view_mode.clone(),
-                                view_state.compose_width,
-                                view_state.compose_column_guides.clone(),
-                                view_state.view_transform.clone(),
-                            )
-                        } else {
-                            (
-                                state.view_mode.clone(),
-                                state.compose_width,
-                                state.compose_column_guides.clone(),
-                                state.view_transform.clone(),
-                            )
-                        }
-                    } else {
-                        (
-                            state.view_mode.clone(),
-                            state.compose_width,
-                            state.compose_column_guides.clone(),
-                            state.view_transform.clone(),
-                        )
-                    };
+                let saved_state =
+                    Self::temporary_split_state(state, split_view_states, split_id, is_active);
+                Self::sync_viewport_to_content(state, layout.content_rect);
+                let view_prefs =
+                    Self::resolve_view_preferences(state, split_view_states, split_id);
 
                 Self::render_buffer_in_split(
                     frame,
                     state,
                     event_log_opt,
-                    content_rect,
+                    layout.content_rect,
                     is_active,
                     theme,
                     ansi_background,
                     background_fade,
                     lsp_waiting,
-                    view_mode,
-                    compose_width,
-                    compose_column_guides,
-                    view_transform,
+                    view_prefs.view_mode,
+                    view_prefs.compose_width,
+                    view_prefs.compose_column_guides,
+                    view_prefs.view_transform,
                     estimated_line_length,
                     buffer_id,
                     hide_cursor,
@@ -300,34 +214,15 @@ impl SplitRenderer {
                 // For large files, we'll use a constant thumb size
                 // NOTE: Calculate scrollbar BEFORE restoring state to use this split's viewport
                 let buffer_len = state.buffer.len();
-                let (total_lines, top_line) = if buffer_len <= large_file_threshold_bytes as usize {
-                    // Small file: count actual lines
-                    let total_lines = if buffer_len > 0 {
-                        // Get the line number of the last byte (which gives us total lines)
-                        state.buffer.get_line_number(buffer_len.saturating_sub(1)) + 1
-                    } else {
-                        1
-                    };
-
-                    // Get the line number at the top of the viewport
-                    let top_line = if state.viewport.top_byte < buffer_len {
-                        state.buffer.get_line_number(state.viewport.top_byte)
-                    } else {
-                        0
-                    };
-
-                    (total_lines, top_line)
-                } else {
-                    // Large file: we'll use constant thumb size, so line count doesn't matter
-                    (0, 0)
-                };
+                let (total_lines, top_line) =
+                    Self::scrollbar_line_counts(state, large_file_threshold_bytes, buffer_len);
 
                 // Render scrollbar for this split and get thumb position
                 // NOTE: Render scrollbar BEFORE restoring state to use this split's viewport
                 let (thumb_start, thumb_end) = Self::render_scrollbar(
                     frame,
                     state,
-                    scrollbar_rect,
+                    layout.scrollbar_rect,
                     is_active,
                     theme,
                     large_file_threshold_bytes,
@@ -336,19 +231,14 @@ impl SplitRenderer {
                 );
 
                 // Restore the original cursors and viewport after rendering content and scrollbar
-                if let Some(cursors) = saved_cursors {
-                    state.cursors = cursors;
-                }
-                if let Some(viewport) = saved_viewport {
-                    state.viewport = viewport;
-                }
+                Self::restore_split_state(state, saved_state);
 
                 // Store the areas for mouse handling
                 split_areas.push((
                     split_id,
                     buffer_id,
-                    content_rect,
-                    scrollbar_rect,
+                    layout.content_rect,
+                    layout.scrollbar_rect,
                     thumb_start,
                     thumb_end,
                 ));
@@ -392,6 +282,145 @@ impl SplitRenderer {
                 }
             }
         }
+    }
+
+    fn split_layout(split_area: Rect) -> SplitLayout {
+        let tabs_height = 1u16;
+        let scrollbar_width = 1u16;
+
+        let tabs_rect = Rect::new(split_area.x, split_area.y, split_area.width, tabs_height);
+        let content_rect = Rect::new(
+            split_area.x,
+            split_area.y + tabs_height,
+            split_area.width.saturating_sub(scrollbar_width),
+            split_area.height.saturating_sub(tabs_height),
+        );
+        let scrollbar_rect = Rect::new(
+            split_area.x + split_area.width.saturating_sub(scrollbar_width),
+            split_area.y + tabs_height,
+            scrollbar_width,
+            split_area.height.saturating_sub(tabs_height),
+        );
+
+        SplitLayout {
+            tabs_rect,
+            content_rect,
+            scrollbar_rect,
+        }
+    }
+
+    fn split_buffers_for_tabs(
+        split_view_states: Option<&HashMap<crate::event::SplitId, crate::split::SplitViewState>>,
+        split_id: crate::event::SplitId,
+        buffer_id: BufferId,
+    ) -> (Vec<BufferId>, usize) {
+        if let Some(view_states) = split_view_states {
+            if let Some(view_state) = view_states.get(&split_id) {
+                return (
+                    view_state.open_buffers.clone(),
+                    view_state.tab_scroll_offset,
+                );
+            }
+        }
+        (vec![buffer_id], 0)
+    }
+
+    fn temporary_split_state(
+        state: &mut EditorState,
+        split_view_states: Option<&HashMap<crate::event::SplitId, crate::split::SplitViewState>>,
+        split_id: crate::event::SplitId,
+        is_active: bool,
+    ) -> (Option<crate::cursor::Cursors>, Option<crate::viewport::Viewport>) {
+        if is_active {
+            return (None, None);
+        }
+
+        if let Some(view_states) = split_view_states {
+            if let Some(view_state) = view_states.get(&split_id) {
+                let saved_cursors =
+                    Some(std::mem::replace(&mut state.cursors, view_state.cursors.clone()));
+                let saved_viewport =
+                    Some(std::mem::replace(&mut state.viewport, view_state.viewport.clone()));
+                return (saved_cursors, saved_viewport);
+            }
+        }
+
+        (None, None)
+    }
+
+    fn restore_split_state(
+        state: &mut EditorState,
+        saved_state: (
+            Option<crate::cursor::Cursors>,
+            Option<crate::viewport::Viewport>,
+        ),
+    ) {
+        let (saved_cursors, saved_viewport) = saved_state;
+        if let Some(cursors) = saved_cursors {
+            state.cursors = cursors;
+        }
+        if let Some(viewport) = saved_viewport {
+            state.viewport = viewport;
+        }
+    }
+
+    fn sync_viewport_to_content(state: &mut EditorState, content_rect: Rect) {
+        if state.viewport.width != content_rect.width || state.viewport.height != content_rect.height
+        {
+            state
+                .viewport
+                .resize(content_rect.width, content_rect.height);
+            let primary = *state.cursors.primary();
+            state.viewport.ensure_visible(&mut state.buffer, &primary);
+        }
+    }
+
+    fn resolve_view_preferences(
+        state: &EditorState,
+        split_view_states: Option<&HashMap<crate::event::SplitId, crate::split::SplitViewState>>,
+        split_id: crate::event::SplitId,
+    ) -> ViewPreferences {
+        if let Some(view_states) = split_view_states {
+            if let Some(view_state) = view_states.get(&split_id) {
+                return ViewPreferences {
+                    view_mode: view_state.view_mode.clone(),
+                    compose_width: view_state.compose_width,
+                    compose_column_guides: view_state.compose_column_guides.clone(),
+                    view_transform: view_state.view_transform.clone(),
+                };
+            }
+        }
+
+        ViewPreferences {
+            view_mode: state.view_mode.clone(),
+            compose_width: state.compose_width,
+            compose_column_guides: state.compose_column_guides.clone(),
+            view_transform: state.view_transform.clone(),
+        }
+    }
+
+    fn scrollbar_line_counts(
+        state: &EditorState,
+        large_file_threshold_bytes: u64,
+        buffer_len: usize,
+    ) -> (usize, usize) {
+        if buffer_len > large_file_threshold_bytes as usize {
+            return (0, 0);
+        }
+
+        let total_lines = if buffer_len > 0 {
+            state.buffer.get_line_number(buffer_len.saturating_sub(1)) + 1
+        } else {
+            1
+        };
+
+        let top_line = if state.viewport.top_byte < buffer_len {
+            state.buffer.get_line_number(state.viewport.top_byte)
+        } else {
+            0
+        };
+
+        (total_lines, top_line)
     }
 
     /// Render a scrollbar for a split
