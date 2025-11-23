@@ -3,6 +3,7 @@ name = "fresh"
 version = "0.1.0"
 authors = ["Noam Lewis"]
 edition = "2021"
+repository = "https://github.com/sinelaw/fresh"
 
 [dependencies]
 crossterm = { version = "0.29.0", features = ["osc52"] }
@@ -60,5 +61,10 @@ vt100 = "0.15"  # Virtual terminal emulator for testing real ANSI output
 
 [profile.release]
 debug = true
+
+# The profile that 'dist' will build with
+[profile.dist]
+inherits = "release"
+lto = "thin"
 
 
