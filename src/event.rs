@@ -523,6 +523,10 @@ pub struct EventLog {
 
     /// Optional file for streaming events to disk
     stream_file: Option<std::fs::File>,
+
+    /// Index at which the buffer was last saved (for tracking modified status)
+    /// When current_index equals saved_at_index, the buffer is not modified
+    saved_at_index: Option<usize>,
 }
 
 impl EventLog {
@@ -534,7 +538,20 @@ impl EventLog {
             snapshots: Vec::new(),
             snapshot_interval: 100,
             stream_file: None,
+            saved_at_index: Some(0), // New buffer starts at "saved" state (index 0)
         }
+    }
+
+    /// Mark the current position as the saved point
+    /// Call this when the buffer is saved to disk
+    pub fn mark_saved(&mut self) {
+        self.saved_at_index = Some(self.current_index);
+    }
+
+    /// Check if the buffer is at the saved position (not modified)
+    /// Returns true if we're at the same event log position as when last saved
+    pub fn is_at_saved_position(&self) -> bool {
+        self.saved_at_index == Some(self.current_index)
     }
 
     /// Enable streaming events to a file

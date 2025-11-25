@@ -512,8 +512,15 @@ impl Editor {
         match action {
             Action::Quit => self.quit(),
             Action::Save => {
-                // Check if file was modified externally since we opened/saved it
-                if self.check_save_conflict().is_some() {
+                // Check if buffer has a file path - if not, redirect to SaveAs
+                if self.active_state().buffer.file_path().is_none() {
+                    self.start_prompt_with_initial_text(
+                        "Save as: ".to_string(),
+                        PromptType::SaveFileAs,
+                        String::new(),
+                    );
+                } else if self.check_save_conflict().is_some() {
+                    // Check if file was modified externally since we opened/saved it
                     self.start_prompt(
                         "File changed on disk. Overwrite? (y/n): ".to_string(),
                         PromptType::ConfirmSaveConflict,
@@ -552,7 +559,16 @@ impl Editor {
             }
             Action::Close => {
                 let buffer_id = self.active_buffer;
-                if let Err(e) = self.close_buffer(buffer_id) {
+                // Check if it's the last buffer
+                if self.buffers.len() == 1 {
+                    self.set_status_message("Cannot close last buffer".to_string());
+                } else if self.active_state().buffer.is_modified() {
+                    // Buffer has unsaved changes - prompt for confirmation
+                    self.start_prompt(
+                        "Buffer modified. (s)ave, (d)iscard, (c)ancel? ".to_string(),
+                        PromptType::ConfirmCloseBuffer { buffer_id },
+                    );
+                } else if let Err(e) = self.close_buffer(buffer_id) {
                     self.set_status_message(format!("Cannot close buffer: {}", e));
                 } else {
                     self.set_status_message("Buffer closed".to_string());
@@ -600,6 +616,8 @@ impl Editor {
                 for event in events {
                     self.apply_event_to_active_buffer(&event);
                 }
+                // Update modified status based on event log position
+                self.update_modified_from_event_log();
             }
             Action::Redo => {
                 if self.is_editing_disabled() {
@@ -611,6 +629,8 @@ impl Editor {
                 for event in events {
                     self.apply_event_to_active_buffer(&event);
                 }
+                // Update modified status based on event log position
+                self.update_modified_from_event_log();
             }
             Action::ShowHelp => {
                 self.dispatch_plugin_hook(
@@ -1346,12 +1366,23 @@ impl Editor {
                                         serde_json::json!({"path": full_path.display().to_string()}),
                                     );
 
-                                    self.set_status_message(format!(
-                                        "Saved as: {}",
-                                        full_path.display()
-                                    ));
+                                    // Check if we should close the buffer after saving
+                                    if let Some(buffer_to_close) = self.pending_close_buffer.take() {
+                                        if let Err(e) = self.force_close_buffer(buffer_to_close) {
+                                            self.set_status_message(format!("Saved, but cannot close buffer: {}", e));
+                                        } else {
+                                            self.set_status_message("Saved and closed".to_string());
+                                        }
+                                    } else {
+                                        self.set_status_message(format!(
+                                            "Saved as: {}",
+                                            full_path.display()
+                                        ));
+                                    }
                                 }
                                 Err(e) => {
+                                    // Clear pending close on error
+                                    self.pending_close_buffer = None;
                                     self.set_status_message(format!("Error saving file: {}", e));
                                 }
                             }
@@ -1639,6 +1670,68 @@ impl Editor {
                                 }
                             } else {
                                 self.set_status_message("Save cancelled".to_string());
+                            }
+                        }
+                        PromptType::ConfirmCloseBuffer { buffer_id } => {
+                            let input_lower = input.trim().to_lowercase();
+                            match input_lower.chars().next() {
+                                Some('s') => {
+                                    // Save and close
+                                    // Check if buffer has a file path
+                                    let has_path = self
+                                        .buffers
+                                        .get(&buffer_id)
+                                        .map(|s| s.buffer.file_path().is_some())
+                                        .unwrap_or(false);
+
+                                    if has_path {
+                                        // Save the buffer
+                                        let old_active = self.active_buffer;
+                                        self.set_active_buffer(buffer_id);
+                                        if let Err(e) = self.save() {
+                                            self.set_status_message(format!("Failed to save: {}", e));
+                                            self.set_active_buffer(old_active);
+                                            return Ok(());
+                                        }
+                                        self.set_active_buffer(old_active);
+                                        // Now close the buffer
+                                        if let Err(e) = self.force_close_buffer(buffer_id) {
+                                            self.set_status_message(format!("Cannot close buffer: {}", e));
+                                        } else {
+                                            self.set_status_message("Saved and closed".to_string());
+                                        }
+                                    } else {
+                                        // No file path - need SaveAs first
+                                        // Store the buffer_id so we can close after save
+                                        self.pending_close_buffer = Some(buffer_id);
+                                        self.start_prompt_with_initial_text(
+                                            "Save as: ".to_string(),
+                                            PromptType::SaveFileAs,
+                                            String::new(),
+                                        );
+                                    }
+                                }
+                                Some('d') => {
+                                    // Discard and close
+                                    if let Err(e) = self.force_close_buffer(buffer_id) {
+                                        self.set_status_message(format!("Cannot close buffer: {}", e));
+                                    } else {
+                                        self.set_status_message("Buffer closed (changes discarded)".to_string());
+                                    }
+                                }
+                                _ => {
+                                    // Cancel (default)
+                                    self.set_status_message("Close cancelled".to_string());
+                                }
+                            }
+                        }
+                        PromptType::ConfirmQuitWithModified => {
+                            let input_lower = input.trim().to_lowercase();
+                            if input_lower == "y" || input_lower == "yes" {
+                                // Force quit without saving
+                                self.should_quit = true;
+                            } else {
+                                self.set_status_message("Quit cancelled".to_string());
                             }
                         }
                         PromptType::LspRename {
@@ -2365,15 +2458,16 @@ impl Editor {
             // Focus this split when clicking on its tab bar
             self.split_manager.set_active_split(split_id);
 
-            // Determine which tab was clicked based on position
+            // Determine which tab was clicked and if it was the close button
             // Get the open buffers for this split
-            let clicked_buffer = if let Some(view_state) = self.split_view_states.get(&split_id) {
+            let (clicked_buffer, clicked_close) = if let Some(view_state) = self.split_view_states.get(&split_id) {
                 let relative_x = col.saturating_sub(tabs_x) as usize;
                 let mut current_x = 0usize;
 
                 let mut found_buffer = None;
+                let mut found_close = false;
                 for buffer_id in &view_state.open_buffers {
-                    // Calculate tab width: " {name}{modified} " + separator " "
+                    // Calculate tab width: " {name}{modified} × " + separator " "
                     let tab_width = if let Some(state) = self.buffers.get(buffer_id) {
                         let name = if let Some(metadata) = self.buffer_metadata.get(buffer_id) {
                             metadata.display_name.as_str()
@@ -2386,24 +2480,53 @@ impl Editor {
                                 .unwrap_or("[No Name]")
                         };
                         let modified = if state.buffer.is_modified() { 1 } else { 0 };
-                        // " {name}{modified} " = 2 + name.len() + modified
-                        2 + name.chars().count() + modified
+                        // " {name}{modified} × " = 2 + name.len() + modified + 3 (for " × ")
+                        2 + name.chars().count() + modified + 3
                     } else {
                         continue;
                     };
 
                     if relative_x >= current_x && relative_x < current_x + tab_width {
                         found_buffer = Some(*buffer_id);
+                        // Check if click is on the close button (last 2 characters: "× ")
+                        // The close button is at position tab_width - 2 within the tab
+                        let pos_in_tab = relative_x - current_x;
+                        if pos_in_tab >= tab_width.saturating_sub(3) {
+                            found_close = true;
+                        }
                         break;
                     }
 
                     // Move past this tab and separator (1 char)
                     current_x += tab_width + 1;
                 }
-                found_buffer
+                (found_buffer, found_close)
             } else {
-                None
+                (None, false)
             };
+
+            // Handle close button click
+            if clicked_close {
+                if let Some(buffer_id) = clicked_buffer {
+                    // Check if it's the last buffer
+                    if self.buffers.len() == 1 {
+                        self.set_status_message("Cannot close last buffer".to_string());
+                    } else if let Some(state) = self.buffers.get(&buffer_id) {
+                        if state.buffer.is_modified() {
+                            // Buffer has unsaved changes - prompt for confirmation
+                            self.start_prompt(
+                                "Buffer modified. (s)ave, (d)iscard, (c)ancel? ".to_string(),
+                                PromptType::ConfirmCloseBuffer { buffer_id },
+                            );
+                        } else if let Err(e) = self.force_close_buffer(buffer_id) {
+                            self.set_status_message(format!("Cannot close buffer: {}", e));
+                        } else {
+                            self.set_status_message("Buffer closed".to_string());
+                        }
+                    }
+                }
+                return Ok(());
+            }
 
             // Switch to the clicked buffer if found, otherwise just focus the split
             let target_buffer = clicked_buffer.unwrap_or(_current_buffer_id);

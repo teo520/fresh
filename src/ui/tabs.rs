@@ -131,7 +131,8 @@ impl TabsRenderer {
                 .unwrap_or("[No Name]");
 
             let modified = if state.buffer.is_modified() { "*" } else { "" };
-            let tab_text = format!(" {name}{modified} ");
+            // Include close button (×) on each tab
+            let tab_text = format!(" {name}{modified} × ");
             let display_width = tab_text.chars().count();
 
             let is_active = *id == active_buffer;

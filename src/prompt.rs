@@ -55,6 +55,11 @@ pub enum PromptType {
     ConfirmRevert,
     /// Confirm saving over a file that changed on disk
     ConfirmSaveConflict,
+    /// Confirm closing a modified buffer (save/discard/cancel)
+    /// Stores buffer_id to close after user confirms
+    ConfirmCloseBuffer { buffer_id: crate::event::BufferId },
+    /// Confirm quitting with modified buffers
+    ConfirmQuitWithModified,
 }
 
 /// Prompt state for the minibuffer

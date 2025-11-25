@@ -2,6 +2,7 @@ pub mod ansi_cursor;
 pub mod auto_indent;
 pub mod auto_revert;
 pub mod basic;
+pub mod buffer_lifecycle;
 pub mod command_palette;
 pub mod document_model;
 pub mod emacs_actions;

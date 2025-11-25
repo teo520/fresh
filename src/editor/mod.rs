@@ -321,6 +321,10 @@ pub struct Editor {
     /// When Some, a confirmation popup is shown asking user to approve LSP spawn
     pending_lsp_confirmation: Option<String>,
 
+    /// Pending close buffer - buffer to close after SaveFileAs completes
+    /// Used when closing a modified buffer that needs to be saved first
+    pending_close_buffer: Option<BufferId>,
+
     /// Whether auto-revert mode is enabled (automatically reload files when changed on disk)
     auto_revert_enabled: bool,
 
@@ -633,6 +637,7 @@ impl Editor {
             plugin_render_requested: false,
             chord_state: Vec::new(),
             pending_lsp_confirmation: None,
+            pending_close_buffer: None,
             auto_revert_enabled: true,
             file_watcher: None,
             watched_dirs: HashSet::new(),
@@ -1238,6 +1243,45 @@ impl Editor {
 
         // Remove buffer from panel_ids mapping if it was a panel buffer
         // This prevents stale entries when the same panel_id is reused later
+        self.panel_ids.retain(|_, &mut buf_id| buf_id != id);
+
+        // Remove buffer from all splits' open_buffers lists
+        for view_state in self.split_view_states.values_mut() {
+            view_state.remove_buffer(id);
+        }
+
+        // Switch to another buffer if we closed the active one
+        if self.active_buffer == id {
+            self.set_active_buffer(replacement_buffer);
+        }
+
+        Ok(())
+    }
+
+    /// Force close the given buffer without checking for unsaved changes
+    /// Use this when the user has already confirmed they want to discard changes
+    pub fn force_close_buffer(&mut self, id: BufferId) -> io::Result<()> {
+        // Can't close if it's the only buffer
+        if self.buffers.len() == 1 {
+            return Err(io::Error::other("Cannot close last buffer"));
+        }
+
+        // Find a replacement buffer (any buffer that's not the one being closed)
+        let replacement_buffer = *self.buffers.keys().find(|&&bid| bid != id).unwrap();
+
+        // Update all splits that are showing this buffer to show the replacement
+        let splits_to_update = self.split_manager.splits_for_buffer(id);
+        for split_id in splits_to_update {
+            let _ = self
+                .split_manager
+                .set_split_buffer(split_id, replacement_buffer);
+        }
+
+        self.buffers.remove(&id);
+        self.event_logs.remove(&id);
+        self.seen_byte_ranges.remove(&id);
+
+        // Remove buffer from panel_ids mapping if it was a panel buffer
         self.panel_ids.retain(|_, &mut buf_id| buf_id != id);
 
         // Remove buffer from all splits' open_buffers lists
@@ -2170,6 +2214,21 @@ impl Editor {
         self.event_logs.get_mut(&self.active_buffer).unwrap()
     }
 
+    /// Update the buffer's modified flag based on event log position
+    /// Call this after undo/redo to correctly track whether the buffer
+    /// has returned to its saved state
+    pub(super) fn update_modified_from_event_log(&mut self) {
+        let is_at_saved = self
+            .event_logs
+            .get(&self.active_buffer)
+            .map(|log| log.is_at_saved_position())
+            .unwrap_or(false);
+
+        if let Some(state) = self.buffers.get_mut(&self.active_buffer) {
+            state.buffer.set_modified(!is_at_saved);
+        }
+    }
+
     // ========================================================================
     // Buffer-based clipboard operations
     // ========================================================================
@@ -2375,6 +2434,9 @@ impl Editor {
             .map(|p| p.to_path_buf());
         self.active_state_mut().buffer.save()?;
         self.status_message = Some("Saved".to_string());
+
+        // Mark the event log position as saved (for undo modified tracking)
+        self.active_event_log_mut().mark_saved();
 
         // Update file modification time after save
         if let Some(ref p) = path {
@@ -2725,8 +2787,27 @@ impl Editor {
 
     /// Request the editor to quit
     pub fn quit(&mut self) {
-        // TODO: Check for unsaved buffers
-        self.should_quit = true;
+        // Check for unsaved buffers
+        let modified_count = self.count_modified_buffers();
+        if modified_count > 0 {
+            // Prompt user for confirmation
+            let msg = if modified_count == 1 {
+                "1 buffer has unsaved changes. Quit anyway? (y/n): ".to_string()
+            } else {
+                format!("{} buffers have unsaved changes. Quit anyway? (y/n): ", modified_count)
+            };
+            self.start_prompt(msg, PromptType::ConfirmQuitWithModified);
+        } else {
+            self.should_quit = true;
+        }
+    }
+
+    /// Count the number of modified buffers
+    fn count_modified_buffers(&self) -> usize {
+        self.buffers
+            .values()
+            .filter(|state| state.buffer.is_modified())
+            .count()
     }
 
     /// Resize all buffers to match new terminal size

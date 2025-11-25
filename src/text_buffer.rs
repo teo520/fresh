@@ -728,6 +728,12 @@ impl TextBuffer {
         self.modified = false;
     }
 
+    /// Set the modified flag explicitly
+    /// Used by undo/redo to restore the correct modified state
+    pub fn set_modified(&mut self, modified: bool) {
+        self.modified = modified;
+    }
+
     /// Get text for a specific line
     pub fn get_line(&self, line: usize) -> Option<Vec<u8>> {
         let (start, end) = self.piece_tree.line_range(line, &self.buffers)?;
