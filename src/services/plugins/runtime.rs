@@ -593,9 +593,12 @@ fn op_fresh_clear_virtual_texts(state: &mut OpState, buffer_id: u32) -> bool {
 /// @param buffer_id - The buffer ID
 /// @param position - Byte position to anchor the virtual line to
 /// @param text - The text content of the virtual line
-/// @param r - Red color component (0-255)
-/// @param g - Green color component (0-255)
-/// @param b - Blue color component (0-255)
+/// @param fg_r - Foreground red color component (0-255)
+/// @param fg_g - Foreground green color component (0-255)
+/// @param fg_b - Foreground blue color component (0-255)
+/// @param bg_r - Background red color component (0-255), -1 for transparent
+/// @param bg_g - Background green color component (0-255), -1 for transparent
+/// @param bg_b - Background blue color component (0-255), -1 for transparent
 /// @param above - Whether to insert above (true) or below (false) the line
 /// @param namespace - Namespace for bulk removal (e.g., "git-blame")
 /// @param priority - Priority for ordering multiple lines at same position
@@ -607,22 +610,34 @@ fn op_fresh_add_virtual_line(
     buffer_id: u32,
     position: u32,
     #[string] text: String,
-    r: u8,
-    g: u8,
-    b: u8,
+    fg_r: u8,
+    fg_g: u8,
+    fg_b: u8,
+    bg_r: i16,
+    bg_g: i16,
+    bg_b: i16,
     above: bool,
     #[string] namespace: String,
     priority: i32,
 ) -> bool {
     if let Some(runtime_state) = state.try_borrow::<Rc<RefCell<TsRuntimeState>>>() {
         let runtime_state = runtime_state.borrow();
+
+        // Convert background color: -1 means transparent (None)
+        let bg_color = if bg_r >= 0 && bg_g >= 0 && bg_b >= 0 {
+            Some((bg_r as u8, bg_g as u8, bg_b as u8))
+        } else {
+            None
+        };
+
         let result = runtime_state
             .command_sender
             .send(PluginCommand::AddVirtualLine {
                 buffer_id: BufferId(buffer_id as usize),
                 position: position as usize,
                 text,
-                color: (r, g, b),
+                fg_color: (fg_r, fg_g, fg_b),
+                bg_color,
                 above,
                 namespace,
                 priority,
@@ -2479,8 +2494,8 @@ impl TypeScriptRuntime {
                     },
 
                     // Virtual lines (full lines above/below source lines - persistent state model)
-                    addVirtualLine(bufferId, position, text, r, g, b, above, namespace, priority = 0) {
-                        return core.ops.op_fresh_add_virtual_line(bufferId, position, text, r, g, b, above, namespace, priority);
+                    addVirtualLine(bufferId, position, text, fgR, fgG, fgB, bgR, bgG, bgB, above, namespace, priority = 0) {
+                        return core.ops.op_fresh_add_virtual_line(bufferId, position, text, fgR, fgG, fgB, bgR, bgG, bgB, above, namespace, priority);
                     },
                     clearVirtualTextNamespace(bufferId, namespace) {
                         return core.ops.op_fresh_clear_virtual_text_namespace(bufferId, namespace);

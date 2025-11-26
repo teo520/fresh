@@ -86,8 +86,8 @@ const blameState: BlameState = {
 // =============================================================================
 
 const colors = {
-  headerFg: [220, 220, 220] as [number, number, number],   // Light gray text
-  headerBg: [50, 50, 55] as [number, number, number],       // Dark gray background
+  headerFg: [0, 0, 0] as [number, number, number],           // Black text
+  headerBg: [200, 200, 200] as [number, number, number],     // Light gray background
 };
 
 // =============================================================================
@@ -377,9 +377,12 @@ function addBlameHeaders(): void {
       blameState.bufferId,
       block.startByte,        // anchor position
       headerText,             // text content
-      colors.headerFg[0],     // r
-      colors.headerFg[1],     // g
-      colors.headerFg[2],     // b
+      colors.headerFg[0],     // fg_r
+      colors.headerFg[1],     // fg_g
+      colors.headerFg[2],     // fg_b
+      colors.headerBg[0],     // bg_r
+      colors.headerBg[1],     // bg_g
+      colors.headerBg[2],     // bg_b
       true,                   // above (LineAbove)
       BLAME_NAMESPACE,        // namespace for bulk removal
       0                       // priority

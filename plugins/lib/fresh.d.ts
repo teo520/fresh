@@ -408,15 +408,18 @@ interface EditorAPI {
    * @param buffer_id - The buffer ID
    * @param position - Byte position to anchor the virtual line to
    * @param text - The text content of the virtual line
-   * @param r - Red color component (0-255)
-   * @param g - Green color component (0-255)
-   * @param b - Blue color component (0-255)
+   * @param fg_r - Foreground red color component (0-255)
+   * @param fg_g - Foreground green color component (0-255)
+   * @param fg_b - Foreground blue color component (0-255)
+   * @param bg_r - Background red color component (0-255), -1 for transparent
+   * @param bg_g - Background green color component (0-255), -1 for transparent
+   * @param bg_b - Background blue color component (0-255), -1 for transparent
    * @param above - Whether to insert above (true) or below (false) the line
    * @param namespace - Namespace for bulk removal (e.g., "git-blame")
    * @param priority - Priority for ordering multiple lines at same position
    * @returns true if virtual line was added
    */
-  addVirtualLine(buffer_id: number, position: number, text: string, r: number, g: number, b: number, above: boolean, namespace: string, priority: number): boolean;
+  addVirtualLine(buffer_id: number, position: number, text: string, fg_r: number, fg_g: number, fg_b: number, bg_r: number, bg_g: number, bg_b: number, above: boolean, namespace: string, priority: number): boolean;
   /**
    * Submit a transformed view stream for a viewport
    * @param buffer_id - Buffer to apply the transform to

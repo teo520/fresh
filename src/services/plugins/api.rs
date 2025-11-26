@@ -319,8 +319,10 @@ pub enum PluginCommand {
         position: usize,
         /// Full line content to display
         text: String,
-        /// Line color (RGB)
-        color: (u8, u8, u8),
+        /// Foreground color (RGB)
+        fg_color: (u8, u8, u8),
+        /// Background color (RGB), None = transparent
+        bg_color: Option<(u8, u8, u8)>,
         /// true = above the line containing position, false = below
         above: bool,
         /// Namespace for bulk removal (e.g., "git-blame")

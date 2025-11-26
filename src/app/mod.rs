@@ -4304,7 +4304,8 @@ impl Editor {
                 buffer_id,
                 position,
                 text,
-                color,
+                fg_color,
+                bg_color,
                 above,
                 namespace,
                 priority,
@@ -4319,7 +4320,11 @@ impl Editor {
                         VirtualTextPosition::LineBelow
                     };
 
-                    let style = Style::default().fg(Color::Rgb(color.0, color.1, color.2));
+                    let mut style =
+                        Style::default().fg(Color::Rgb(fg_color.0, fg_color.1, fg_color.2));
+                    if let Some(bg) = bg_color {
+                        style = style.bg(Color::Rgb(bg.0, bg.1, bg.2));
+                    }
                     let ns = VirtualTextNamespace::from_string(namespace);
 
                     state.virtual_texts.add_line(

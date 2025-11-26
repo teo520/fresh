@@ -263,6 +263,41 @@ impl Viewport {
             return true;
         }
 
+        // Special case: When cursor is at the first view line of the viewport,
+        // check if there are virtual lines above the cursor that should be visible.
+        // Scroll up to show them, but keep the cursor visible within the viewport.
+        let cursor_position_in_viewport = cursor_view_line.saturating_sub(effective_top);
+        if cursor_position_in_viewport == 0 && cursor_view_line > 0 {
+            // Cursor is at the top of the viewport, and there are lines above it
+            // Count how many virtual lines (lines without source content) precede the cursor
+            let mut virtual_lines_above = 0;
+            for i in (0..cursor_view_line).rev() {
+                let has_source = view_lines[i].char_mappings.iter().any(|m| m.is_some());
+                if has_source {
+                    break; // Hit a source line, stop counting
+                }
+                virtual_lines_above += 1;
+            }
+
+            if virtual_lines_above > 0 {
+                // Scroll up to show virtual lines, but ensure cursor stays visible
+                // The cursor should be at the bottom of the visible area at most
+                let max_scroll_up = virtual_lines_above.min(viewport_height.saturating_sub(1));
+                let new_offset = effective_top.saturating_sub(max_scroll_up);
+
+                if new_offset != self.top_view_line_offset {
+                    tracing::trace!(
+                        "ensure_visible_in_layout: showing {} virtual lines above cursor, scrolling from {} to {}",
+                        virtual_lines_above,
+                        self.top_view_line_offset,
+                        new_offset
+                    );
+                    self.top_view_line_offset = new_offset;
+                    return true;
+                }
+            }
+        }
+
         // Handle horizontal scrolling for cursor column
         if cursor_view_line < view_lines.len() {
             let line = &view_lines[cursor_view_line];
