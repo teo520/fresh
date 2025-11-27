@@ -3503,7 +3503,9 @@ impl TypeScriptPluginManager {
                             ViewTokenWireKind::Newline => serde_json::json!("Newline"),
                             ViewTokenWireKind::Space => serde_json::json!("Space"),
                             ViewTokenWireKind::Break => serde_json::json!("Break"),
-                            ViewTokenWireKind::BinaryByte(b) => serde_json::json!({ "BinaryByte": b }),
+                            ViewTokenWireKind::BinaryByte(b) => {
+                                serde_json::json!({ "BinaryByte": b })
+                            }
                         };
                         serde_json::json!({
                             "source_offset": token.source_offset,

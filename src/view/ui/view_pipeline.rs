@@ -206,9 +206,10 @@ impl<'a> Iterator for ViewLineIterator<'a> {
                                         // Try to get valid portion, then skip the bad byte
                                         let valid_up_to = e.valid_up_to();
                                         if valid_up_to > 0 {
-                                            if let Some(ch) = std::str::from_utf8(&remaining[..valid_up_to])
-                                                .ok()
-                                                .and_then(|s| s.chars().next())
+                                            if let Some(ch) =
+                                                std::str::from_utf8(&remaining[..valid_up_to])
+                                                    .ok()
+                                                    .and_then(|s| s.chars().next())
                                             {
                                                 byte_idx += ch.len_utf8();
                                                 ch
@@ -715,13 +716,11 @@ mod tests {
         // PNG-like content with SUB control char (0x1A)
         // Using valid UTF-8 string with embedded control character
         let png_like = "PNG\r\n\x1A\n";
-        let tokens = vec![
-            ViewTokenWire {
-                kind: ViewTokenWireKind::Text(png_like.to_string()),
-                source_offset: Some(0),
-                style: None,
-            },
-        ];
+        let tokens = vec![ViewTokenWire {
+            kind: ViewTokenWireKind::Text(png_like.to_string()),
+            source_offset: Some(0),
+            style: None,
+        }];
 
         let lines: Vec<_> = ViewLineIterator::with_binary_mode(&tokens, true).collect();
 

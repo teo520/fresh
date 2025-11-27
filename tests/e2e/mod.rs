@@ -1,8 +1,8 @@
 pub mod ansi_cursor;
 pub mod auto_indent;
-pub mod binary_file;
 pub mod auto_revert;
 pub mod basic;
+pub mod binary_file;
 pub mod buffer_lifecycle;
 pub mod command_palette;
 pub mod document_model;

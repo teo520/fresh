@@ -884,7 +884,14 @@ impl TextBuffer {
             // Allow: tab (0x09), newline (0x0A), carriage return (0x0D)
             // Also allow: form feed (0x0C), vertical tab (0x0B) - sometimes used in text
             // ESC (0x1B) is handled above for ANSI sequences
-            if byte < 0x20 && byte != 0x09 && byte != 0x0A && byte != 0x0D && byte != 0x0C && byte != 0x0B && byte != 0x1B {
+            if byte < 0x20
+                && byte != 0x09
+                && byte != 0x0A
+                && byte != 0x0D
+                && byte != 0x0C
+                && byte != 0x0B
+                && byte != 0x1B
+            {
                 return true;
             }
 
@@ -3144,11 +3151,11 @@ mod property_tests {
         // GIF signature: GIF89a or GIF87a - contains valid ASCII but typically followed by binary
         // GIF header is ASCII but the LSD (Logical Screen Descriptor) contains binary
         let gif_data: &[u8] = &[
-            0x47, 0x49, 0x46, 0x38, 0x39, 0x61,  // GIF89a
-            0x01, 0x00, 0x01, 0x00,              // Width=1, Height=1 (little endian)
-            0x00,                                // Packed byte
-            0x00,                                // Background color index
-            0x00,                                // Pixel aspect ratio
+            0x47, 0x49, 0x46, 0x38, 0x39, 0x61, // GIF89a
+            0x01, 0x00, 0x01, 0x00, // Width=1, Height=1 (little endian)
+            0x00, // Packed byte
+            0x00, // Background color index
+            0x00, // Pixel aspect ratio
         ];
         // The null bytes in the dimensions trigger binary detection
         assert!(TextBuffer::detect_binary(gif_data));

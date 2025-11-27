@@ -151,8 +151,7 @@ fn test_typing_blocked_in_binary_file() {
 
     // Minimal PNG data
     let png_data: &[u8] = &[
-        0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A,
-        0x00, 0x00, 0x00, 0x00,
+        0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x00,
     ];
     std::fs::write(&png_path, png_data).unwrap();
 
@@ -162,9 +161,15 @@ fn test_typing_blocked_in_binary_file() {
     let initial_len = harness.buffer_len();
 
     // Try to type - should be blocked
-    harness.send_key(KeyCode::Char('a'), KeyModifiers::NONE).unwrap();
-    harness.send_key(KeyCode::Char('b'), KeyModifiers::NONE).unwrap();
-    harness.send_key(KeyCode::Char('c'), KeyModifiers::NONE).unwrap();
+    harness
+        .send_key(KeyCode::Char('a'), KeyModifiers::NONE)
+        .unwrap();
+    harness
+        .send_key(KeyCode::Char('b'), KeyModifiers::NONE)
+        .unwrap();
+    harness
+        .send_key(KeyCode::Char('c'), KeyModifiers::NONE)
+        .unwrap();
 
     // Buffer length should not change
     assert_eq!(
@@ -184,9 +189,7 @@ fn test_binary_bytes_rendered_as_hex() {
     // 0x89 (high byte), 0x50 ('P'), 0x4E ('N'), 0x47 ('G'), 0x0D (CR), 0x0A (LF), 0x1A (SUB), 0x0A (LF)
     // This is the PNG signature - we should see <89>PNG<0D><0A><1A><0A>
     // Note: 0x0D (CR) and 0x0A (newline) are allowed whitespace, so they won't be rendered as hex
-    let bin_data: &[u8] = &[
-        0x89, 0x50, 0x4E, 0x47, 0x00, 0x01, 0x7F,
-    ];
+    let bin_data: &[u8] = &[0x89, 0x50, 0x4E, 0x47, 0x00, 0x01, 0x7F];
     std::fs::write(&bin_path, bin_data).unwrap();
 
     let mut harness = EditorTestHarness::new(120, 24).unwrap();
@@ -260,7 +263,9 @@ fn test_binary_file_scrolling_no_artifacts() {
 
     // Scroll down several times
     for i in 0..5 {
-        harness.send_key(KeyCode::PageDown, KeyModifiers::NONE).unwrap();
+        harness
+            .send_key(KeyCode::PageDown, KeyModifiers::NONE)
+            .unwrap();
         harness.render_real().unwrap();
         let screen = harness.vt100_screen_to_string();
         validate_gutter_format(&screen, &format!("after PageDown #{}", i + 1));
@@ -269,7 +274,9 @@ fn test_binary_file_scrolling_no_artifacts() {
 
     // Scroll back up to the beginning
     for i in 0..5 {
-        harness.send_key(KeyCode::PageUp, KeyModifiers::NONE).unwrap();
+        harness
+            .send_key(KeyCode::PageUp, KeyModifiers::NONE)
+            .unwrap();
         harness.render_real().unwrap();
         let screen = harness.vt100_screen_to_string();
         validate_gutter_format(&screen, &format!("after PageUp #{}", i + 1));
@@ -277,7 +284,9 @@ fn test_binary_file_scrolling_no_artifacts() {
     }
 
     // Go to beginning of file using Home key
-    harness.send_key(KeyCode::Home, KeyModifiers::CONTROL).unwrap();
+    harness
+        .send_key(KeyCode::Home, KeyModifiers::CONTROL)
+        .unwrap();
     harness.render_real().unwrap();
 
     // Capture final screen after scrolling back
@@ -361,7 +370,10 @@ fn validate_gutter_format(screen: &str, context: &str) {
         assert!(
             bar_pos.is_some(),
             "{}: Line {} is missing gutter separator │.\nLine: '{}'\n\nFull screen:\n{}",
-            context, i, line, screen
+            context,
+            i,
+            line,
+            screen
         );
 
         let bar_pos = bar_pos.unwrap();

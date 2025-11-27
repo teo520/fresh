@@ -934,149 +934,155 @@ impl Editor {
         // This is especially important for large files
         // Skip LSP for binary files
         if !is_binary {
-        if let Some(lsp) = &mut self.lsp {
-            tracing::debug!("LSP manager available for file: {}", path.display());
-            if let Some(language) = detect_language(path) {
-                tracing::debug!(
-                    "Detected language: {} for file: {}",
-                    language,
-                    path.display()
-                );
+            if let Some(lsp) = &mut self.lsp {
+                tracing::debug!("LSP manager available for file: {}", path.display());
+                if let Some(language) = detect_language(path) {
+                    tracing::debug!(
+                        "Detected language: {} for file: {}",
+                        language,
+                        path.display()
+                    );
 
-                // Use the URI from metadata (already computed in with_file)
-                if let Some(uri) = metadata.file_uri() {
-                    tracing::debug!("Using URI from metadata: {}", uri.as_str());
-                    // Get file size to decide whether to send full content
-                    let file_size = std::fs::metadata(path).ok().map(|m| m.len()).unwrap_or(0);
-                    let large_file_threshold = self.config.editor.large_file_threshold_bytes;
+                    // Use the URI from metadata (already computed in with_file)
+                    if let Some(uri) = metadata.file_uri() {
+                        tracing::debug!("Using URI from metadata: {}", uri.as_str());
+                        // Get file size to decide whether to send full content
+                        let file_size = std::fs::metadata(path).ok().map(|m| m.len()).unwrap_or(0);
+                        let large_file_threshold = self.config.editor.large_file_threshold_bytes;
 
-                    if file_size > large_file_threshold {
-                        let reason = format!("File too large ({} bytes)", file_size);
-                        tracing::warn!(
-                            "Skipping LSP for large file: {} ({})",
-                            path.display(),
-                            reason
-                        );
-                        metadata.disable_lsp(reason);
-                    } else {
-                        // Get the text from the buffer we just loaded
-                        let text = if let Some(state) = self.buffers.get(&buffer_id) {
-                            state.buffer.to_string()
+                        if file_size > large_file_threshold {
+                            let reason = format!("File too large ({} bytes)", file_size);
+                            tracing::warn!(
+                                "Skipping LSP for large file: {} ({})",
+                                path.display(),
+                                reason
+                            );
+                            metadata.disable_lsp(reason);
                         } else {
-                            String::new()
-                        };
+                            // Get the text from the buffer we just loaded
+                            let text = if let Some(state) = self.buffers.get(&buffer_id) {
+                                state.buffer.to_string()
+                            } else {
+                                String::new()
+                            };
 
-                        // Try to spawn LSP client, respecting confirmation settings
-                        tracing::debug!(
-                            "Attempting to spawn LSP client for language: {}",
-                            language
-                        );
-                        let spawn_result = lsp.try_spawn(&language);
-                        match spawn_result {
-                            LspSpawnResult::Spawned => {
-                                // LSP is ready, get the handle and notify it about the file
-                                if let Some(client) = lsp.get_or_spawn(&language) {
-                                    tracing::info!("Sending didOpen to LSP for: {}", uri.as_str());
-                                    if let Err(e) = client.did_open(uri.clone(), text, language) {
-                                        tracing::warn!("Failed to send didOpen to LSP: {}", e);
-                                    } else {
-                                        tracing::info!("Successfully sent didOpen to LSP");
+                            // Try to spawn LSP client, respecting confirmation settings
+                            tracing::debug!(
+                                "Attempting to spawn LSP client for language: {}",
+                                language
+                            );
+                            let spawn_result = lsp.try_spawn(&language);
+                            match spawn_result {
+                                LspSpawnResult::Spawned => {
+                                    // LSP is ready, get the handle and notify it about the file
+                                    if let Some(client) = lsp.get_or_spawn(&language) {
+                                        tracing::info!(
+                                            "Sending didOpen to LSP for: {}",
+                                            uri.as_str()
+                                        );
+                                        if let Err(e) = client.did_open(uri.clone(), text, language)
+                                        {
+                                            tracing::warn!("Failed to send didOpen to LSP: {}", e);
+                                        } else {
+                                            tracing::info!("Successfully sent didOpen to LSP");
 
-                                        // Request pull diagnostics after opening the file
-                                        // Get previous result_id if we have one (for incremental updates)
-                                        let previous_result_id =
-                                            self.diagnostic_result_ids.get(uri.as_str()).cloned();
-                                        let request_id = self.next_lsp_request_id;
-                                        self.next_lsp_request_id += 1;
+                                            // Request pull diagnostics after opening the file
+                                            // Get previous result_id if we have one (for incremental updates)
+                                            let previous_result_id = self
+                                                .diagnostic_result_ids
+                                                .get(uri.as_str())
+                                                .cloned();
+                                            let request_id = self.next_lsp_request_id;
+                                            self.next_lsp_request_id += 1;
 
-                                        if let Err(e) = client.document_diagnostic(
-                                            request_id,
-                                            uri.clone(),
-                                            previous_result_id,
-                                        ) {
-                                            tracing::debug!(
+                                            if let Err(e) = client.document_diagnostic(
+                                                request_id,
+                                                uri.clone(),
+                                                previous_result_id,
+                                            ) {
+                                                tracing::debug!(
                                                 "Failed to request pull diagnostics (server may not support): {}",
                                                 e
                                             );
-                                        } else {
-                                            tracing::info!(
+                                            } else {
+                                                tracing::info!(
                                                 "Requested pull diagnostics for {} (request_id={})",
                                                 uri.as_str(),
                                                 request_id
                                             );
-                                        }
+                                            }
 
-                                        // Request inlay hints for the entire file (if enabled)
-                                        if self.config.editor.enable_inlay_hints {
-                                            let request_id = self.next_lsp_request_id;
-                                            self.next_lsp_request_id += 1;
-                                            self.pending_inlay_hints_request = Some(request_id);
+                                            // Request inlay hints for the entire file (if enabled)
+                                            if self.config.editor.enable_inlay_hints {
+                                                let request_id = self.next_lsp_request_id;
+                                                self.next_lsp_request_id += 1;
+                                                self.pending_inlay_hints_request = Some(request_id);
 
-                                            // Get buffer line count for range
-                                            // LSP uses 0-indexed lines, so last line is line_count - 1
-                                            let (last_line, last_char) = if let Some(state) =
-                                                self.buffers.get(&self.active_buffer)
-                                            {
-                                                let line_count =
-                                                    state.buffer.line_count().unwrap_or(1000);
-                                                // Use a large character value to include the entire last line
-                                                (line_count.saturating_sub(1) as u32, 10000)
-                                            } else {
-                                                (999, 10000) // Default fallback
-                                            };
+                                                // Get buffer line count for range
+                                                // LSP uses 0-indexed lines, so last line is line_count - 1
+                                                let (last_line, last_char) = if let Some(state) =
+                                                    self.buffers.get(&self.active_buffer)
+                                                {
+                                                    let line_count =
+                                                        state.buffer.line_count().unwrap_or(1000);
+                                                    // Use a large character value to include the entire last line
+                                                    (line_count.saturating_sub(1) as u32, 10000)
+                                                } else {
+                                                    (999, 10000) // Default fallback
+                                                };
 
-                                            if let Err(e) = client.inlay_hints(
-                                                request_id,
-                                                uri.clone(),
-                                                0,
-                                                0, // start
-                                                last_line,
-                                                last_char, // end - last line with large char to include all content
-                                            ) {
-                                                tracing::debug!(
+                                                if let Err(e) = client.inlay_hints(
+                                                    request_id,
+                                                    uri.clone(),
+                                                    0,
+                                                    0, // start
+                                                    last_line,
+                                                    last_char, // end - last line with large char to include all content
+                                                ) {
+                                                    tracing::debug!(
                                                     "Failed to request inlay hints (server may not support): {}",
                                                     e
                                                 );
-                                                self.pending_inlay_hints_request = None;
-                                            } else {
-                                                tracing::info!(
+                                                    self.pending_inlay_hints_request = None;
+                                                } else {
+                                                    tracing::info!(
                                                     "Requested inlay hints for {} (request_id={})",
                                                     uri.as_str(),
                                                     request_id
                                                 );
+                                                }
                                             }
                                         }
                                     }
                                 }
-                            }
-                            LspSpawnResult::NotAutoStart => {
-                                // LSP is not configured for auto-start
-                                // User can start it manually via command palette
-                                tracing::debug!(
+                                LspSpawnResult::NotAutoStart => {
+                                    // LSP is not configured for auto-start
+                                    // User can start it manually via command palette
+                                    tracing::debug!(
                                     "LSP for {} not auto-starting (auto_start=false). Use command palette to start manually.",
                                     language
                                 );
-                            }
-                            LspSpawnResult::Failed => {
-                                tracing::warn!(
-                                    "Failed to spawn LSP client for language: {}",
-                                    language
-                                );
+                                }
+                                LspSpawnResult::Failed => {
+                                    tracing::warn!(
+                                        "Failed to spawn LSP client for language: {}",
+                                        language
+                                    );
+                                }
                             }
                         }
+                    } else {
+                        tracing::warn!(
+                            "No URI in metadata for file: {} (failed to compute absolute path)",
+                            path.display()
+                        );
                     }
                 } else {
-                    tracing::warn!(
-                        "No URI in metadata for file: {} (failed to compute absolute path)",
-                        path.display()
-                    );
+                    tracing::debug!("No language detected for file: {}", path.display());
                 }
             } else {
-                tracing::debug!("No language detected for file: {}", path.display());
+                tracing::debug!("No LSP manager available");
             }
-        } else {
-            tracing::debug!("No LSP manager available");
-        }
         } // end if !is_binary
 
         // Store metadata for this buffer
@@ -1105,10 +1111,7 @@ impl Editor {
 
         // Show appropriate status message for binary vs regular files
         if is_binary {
-            self.status_message = Some(format!(
-                "Opened {} [binary file, read-only]",
-                display_name
-            ));
+            self.status_message = Some(format!("Opened {} [binary file, read-only]", display_name));
         } else {
             self.status_message = Some(format!("Opened {}", display_name));
         }

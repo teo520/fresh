@@ -596,7 +596,8 @@ impl SplitRenderer {
         // Each ViewLine preserves LineStart info for correct line number rendering
         // Use binary mode if the buffer contains binary content
         let is_binary = state.buffer.is_binary();
-        let source_lines: Vec<ViewLine> = ViewLineIterator::with_binary_mode(&tokens, is_binary).collect();
+        let source_lines: Vec<ViewLine> =
+            ViewLineIterator::with_binary_mode(&tokens, is_binary).collect();
 
         // Inject virtual lines (LineAbove/LineBelow) from VirtualTextManager
         let lines = Self::inject_virtual_lines(source_lines, state);
@@ -723,7 +724,12 @@ impl SplitRenderer {
         // For binary files, read raw bytes directly to preserve byte values
         // (LineIterator uses String::from_utf8_lossy which loses high bytes)
         if is_binary {
-            return Self::build_base_tokens_binary(buffer, top_byte, estimated_line_length, visible_count);
+            return Self::build_base_tokens_binary(
+                buffer,
+                top_byte,
+                estimated_line_length,
+                visible_count,
+            );
         }
 
         let mut iter = buffer.line_iterator(top_byte, estimated_line_length);
@@ -844,16 +850,17 @@ impl SplitRenderer {
         let mut current_text_start: Option<usize> = None;
 
         // Helper to flush accumulated text to tokens
-        let flush_text = |tokens: &mut Vec<ViewTokenWire>, text: &mut String, start: &mut Option<usize>| {
-            if !text.is_empty() {
-                tokens.push(ViewTokenWire {
-                    source_offset: *start,
-                    kind: ViewTokenWireKind::Text(std::mem::take(text)),
-                    style: None,
-                });
-                *start = None;
-            }
-        };
+        let flush_text =
+            |tokens: &mut Vec<ViewTokenWire>, text: &mut String, start: &mut Option<usize>| {
+                if !text.is_empty() {
+                    tokens.push(ViewTokenWire {
+                        source_offset: *start,
+                        kind: ViewTokenWireKind::Text(std::mem::take(text)),
+                        style: None,
+                    });
+                    *start = None;
+                }
+            };
 
         while byte_offset < raw_bytes.len() && lines_seen < max_lines {
             let b = raw_bytes[byte_offset];
@@ -978,7 +985,13 @@ impl SplitRenderer {
         visible_count: usize,
         is_binary: bool,
     ) -> Vec<crate::services::plugins::api::ViewTokenWire> {
-        Self::build_base_tokens(buffer, top_byte, estimated_line_length, visible_count, is_binary)
+        Self::build_base_tokens(
+            buffer,
+            top_byte,
+            estimated_line_length,
+            visible_count,
+            is_binary,
+        )
     }
 
     fn apply_wrapping_transform(
@@ -1541,7 +1554,13 @@ impl SplitRenderer {
             let max_chars_to_process = left_col.saturating_add(max_visible_chars);
 
             // ANSI parser for this line to handle escape sequences
-            let mut ansi_parser = AnsiParser::new();
+            // Optimization: only create parser if line contains ESC byte
+            let line_has_ansi = line_content.contains('\x1b');
+            let mut ansi_parser = if line_has_ansi {
+                Some(AnsiParser::new())
+            } else {
+                None
+            };
             // Track visible characters separately from byte position for ANSI handling
             let mut visible_char_count = 0usize;
 
