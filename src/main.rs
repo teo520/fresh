@@ -72,12 +72,13 @@ fn main() -> io::Result<()> {
     }
 
     // Initialize tracing - log to a file to avoid interfering with terminal UI
-    let log_file = std::fs::File::create("/tmp/editor.log").expect("Failed to create log file");
-
-    tracing_subscriber::registry()
-        .with(fmt::layer().with_writer(std::sync::Arc::new(log_file)))
-        .with(EnvFilter::from_default_env().add_directive(tracing::Level::DEBUG.into()))
-        .init();
+    // Fall back to no logging if the log file can't be created
+    if let Ok(log_file) = std::fs::File::create("/tmp/editor.log") {
+        tracing_subscriber::registry()
+            .with(fmt::layer().with_writer(std::sync::Arc::new(log_file)))
+            .with(EnvFilter::from_default_env().add_directive(tracing::Level::DEBUG.into()))
+            .init();
+    }
 
     tracing::info!("Editor starting");
 
