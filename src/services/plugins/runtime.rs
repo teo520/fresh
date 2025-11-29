@@ -2577,6 +2577,9 @@ impl TypeScriptRuntime {
         command_sender: std::sync::mpsc::Sender<PluginCommand>,
         pending_responses: PendingResponses,
     ) -> Result<Self> {
+        // Initialize V8 platform before creating JsRuntime
+        crate::v8_init::init();
+
         let event_handlers = Rc::new(RefCell::new(HashMap::new()));
         let runtime_state = Rc::new(RefCell::new(TsRuntimeState {
             state_snapshot,

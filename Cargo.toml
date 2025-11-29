@@ -70,6 +70,7 @@ proptest = "1.9"
 tempfile = "3.23.0"
 insta = { version = "1.44", features = ["yaml"] }
 vt100 = "0.15"  # Virtual terminal emulator for testing real ANSI output
+ctor = "0.6.1"
 
 [profile.release]
 debug = true
