@@ -1,6 +1,55 @@
 ## Release Notes
 
-### v0.1.13 (Unreleased)
+### v0.1.15 (Unreleased)
+
+#### Features
+
+* **TextMate Grammar Support**: Syntax highlighting now uses TextMate grammars via syntect for languages without tree-sitter support. Includes proper highlighting for Markdown (headings, bold, italic, code, links, quotes, lists).
+
+* **Fuzzy Matching**: Command palette and file browser now use fzf-style fuzzy matching. Matches are highlighted and scored by consecutive characters, word boundaries, and match position.
+
+* **Tab Navigation Commands**: New commands "Go to Next Tab" and "Go to Previous Tab" in the command palette for keyboard-driven tab switching.
+
+* **File Recovery**: Emacs-style auto-recovery for unsaved changes. Buffers are automatically saved every 2 seconds to `~/.local/share/fresh/recovery/`. On startup, automatically recovers unsaved changes from crashed sessions. Uses chunked storage for large files to avoid memory issues.
+
+* **Explorer Menu**: New menu bar entry with file explorer actions (New File, New Folder, Rename, Delete) and keybindings. Disabled items shown in theme colors when not applicable.
+
+* **File Explorer Rename**: Press F2 or use Explorer menu to rename files/folders. Project root is protected from renaming.
+
+* **Emacs-Style Readline Bindings**: Added terminal key equivalents for common operations:
+  - Ctrl+A: Home (beginning of line)
+  - Ctrl+E: End (end of line)
+  - Ctrl+K: Kill to end of line
+  - Ctrl+U: Kill to beginning of line
+  - Ctrl+W: Kill word backward
+  - Alt+D: Kill word forward
+  - Ctrl+Y: Yank (paste from kill ring)
+
+#### Bug Fixes
+
+* **Multi-Cursor Selection**: Fixed Ctrl+D selection replacement not working correctly (issue #210).
+
+* **LSP Auto-Restart**: Fixed stopped LSP server incorrectly auto-restarting on edit.
+
+* **File Explorer Selection**: Fixed selection being lost after rename completes.
+
+* **Markdown Highlighting**: Fixed markdown files not getting syntax highlighting for headers, bold, italic, links, etc.
+
+#### Performance
+
+* **Recovery Write Performance**: Removed sync_all from recovery writes, reducing disk I/O overhead.
+
+* **Large File Recovery**: Chunked recovery format applies edits directly without loading entire file into memory.
+
+---
+
+### v0.1.14
+
+See git history for changes.
+
+---
+
+### v0.1.13
 
 #### Features
 
