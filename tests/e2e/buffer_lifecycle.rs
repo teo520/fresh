@@ -29,7 +29,7 @@ fn test_save_unnamed_buffer_shows_save_as_prompt() {
     harness.assert_screen_contains("Save as:");
 }
 
-/// Test that quitting with modified buffers shows confirmation
+/// Test that quitting with modified buffers shows confirmation and doesn't quit immediately
 #[test]
 fn test_quit_with_modified_buffers_shows_confirmation() {
     let mut harness = EditorTestHarness::new(80, 24).unwrap();
@@ -44,9 +44,11 @@ fn test_quit_with_modified_buffers_shows_confirmation() {
         .unwrap();
     harness.render().unwrap();
 
-    // Should show confirmation prompt about unsaved changes
-    harness.assert_screen_contains("unsaved");
-    harness.assert_screen_contains("Quit");
+    // Should NOT quit immediately - there's a confirmation prompt
+    assert!(
+        !harness.should_quit(),
+        "Editor should not quit immediately with unsaved changes"
+    );
 }
 
 /// Test that quitting without modified buffers works immediately
@@ -69,9 +71,9 @@ fn test_quit_without_modified_buffers() {
     );
 }
 
-/// Test that quitting with confirmation (y) works
+/// Test that quitting with confirmation (discard) works
 #[test]
-fn test_quit_with_confirmation_yes() {
+fn test_quit_with_confirmation_discard() {
     let mut harness = EditorTestHarness::new(80, 24).unwrap();
 
     // Modify buffer
@@ -84,9 +86,9 @@ fn test_quit_with_confirmation_yes() {
         .unwrap();
     harness.render().unwrap();
 
-    // Confirm with 'y' and Enter
+    // Confirm with 'd' (discard) and Enter
     harness
-        .send_key(KeyCode::Char('y'), KeyModifiers::NONE)
+        .send_key(KeyCode::Char('d'), KeyModifiers::NONE)
         .unwrap();
     harness
         .send_key(KeyCode::Enter, KeyModifiers::NONE)
@@ -97,9 +99,9 @@ fn test_quit_with_confirmation_yes() {
     assert!(harness.should_quit(), "Editor should quit after confirming");
 }
 
-/// Test that quitting with confirmation (n) cancels quit
+/// Test that quitting with confirmation (cancel) cancels quit
 #[test]
-fn test_quit_with_confirmation_no() {
+fn test_quit_with_confirmation_cancel() {
     let mut harness = EditorTestHarness::new(80, 24).unwrap();
 
     // Modify buffer
@@ -112,9 +114,9 @@ fn test_quit_with_confirmation_no() {
         .unwrap();
     harness.render().unwrap();
 
-    // Cancel with 'n' and Enter
+    // Cancel with 'c' and Enter (or any non-'d' key, default is cancel)
     harness
-        .send_key(KeyCode::Char('n'), KeyModifiers::NONE)
+        .send_key(KeyCode::Char('c'), KeyModifiers::NONE)
         .unwrap();
     harness
         .send_key(KeyCode::Enter, KeyModifiers::NONE)

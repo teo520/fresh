@@ -558,7 +558,7 @@ impl Editor {
                 } else if self.check_save_conflict().is_some() {
                     // Check if file was modified externally since we opened/saved it
                     self.start_prompt(
-                        "File changed on disk. Overwrite? (y/n): ".to_string(),
+                        "File changed on disk. (o)verwrite, (C)ancel? ".to_string(),
                         PromptType::ConfirmSaveConflict,
                     );
                 } else {
@@ -613,7 +613,7 @@ impl Editor {
                 // Check if buffer has unsaved changes - prompt for confirmation
                 if self.active_state().buffer.is_modified() {
                     self.start_prompt(
-                        "Buffer has unsaved changes. Revert anyway? (y/n): ".to_string(),
+                        "Buffer has unsaved changes. (r)evert, (C)ancel? ".to_string(),
                         PromptType::ConfirmRevert,
                     );
                 } else {
@@ -1830,7 +1830,7 @@ impl Editor {
                         }
                         PromptType::ConfirmRevert => {
                             let input_lower = input.trim().to_lowercase();
-                            if input_lower == "y" || input_lower == "yes" {
+                            if input_lower == "r" || input_lower == "revert" {
                                 if let Err(e) = self.revert_file() {
                                     self.set_status_message(format!("Failed to revert: {}", e));
                                 }
@@ -1840,7 +1840,7 @@ impl Editor {
                         }
                         PromptType::ConfirmSaveConflict => {
                             let input_lower = input.trim().to_lowercase();
-                            if input_lower == "y" || input_lower == "yes" {
+                            if input_lower == "o" || input_lower == "overwrite" {
                                 // Force save despite conflict
                                 if let Err(e) = self.save() {
                                     self.set_status_message(format!("Failed to save: {}", e));
@@ -1915,7 +1915,7 @@ impl Editor {
                         }
                         PromptType::ConfirmQuitWithModified => {
                             let input_lower = input.trim().to_lowercase();
-                            if input_lower == "y" || input_lower == "yes" {
+                            if input_lower == "d" || input_lower == "discard" {
                                 // Force quit without saving
                                 self.should_quit = true;
                             } else {

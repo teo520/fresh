@@ -3142,10 +3142,10 @@ impl Editor {
         if modified_count > 0 {
             // Prompt user for confirmation
             let msg = if modified_count == 1 {
-                "1 buffer has unsaved changes. Quit anyway? (y/n): ".to_string()
+                "1 buffer has unsaved changes. (d)iscard and quit, (C)ancel? ".to_string()
             } else {
                 format!(
-                    "{} buffers have unsaved changes. Quit anyway? (y/n): ",
+                    "{} buffers have unsaved changes. (d)iscard and quit, (C)ancel? ",
                     modified_count
                 )
             };
