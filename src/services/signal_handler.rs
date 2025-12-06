@@ -25,7 +25,13 @@ mod linux {
         // Install SIGUSR1 handler for individual thread backtrace capture
         install_backtrace_signal_handler();
 
-        let handler = move || {
+        // Install SIGINT and SIGTERM handlers
+        install_termination_signal_handlers();
+    }
+
+    /// Install signal handlers for SIGINT and SIGTERM that dump backtraces before exiting
+    fn install_termination_signal_handlers() {
+        extern "C" fn termination_handler(_: libc::c_int) {
             // Only handle the first signal
             if SIGNAL_RECEIVED.swap(true, Ordering::SeqCst) {
                 return;
@@ -37,11 +43,18 @@ mod linux {
 
             // Terminate the process
             std::process::exit(130); // Standard exit code for Ctrl+C
-        };
+        }
 
-        // Register SIGINT and SIGTERM handler
-        if let Err(e) = ctrlc::set_handler(handler) {
-            tracing::error!("Failed to set signal handler: {}", e);
+        let handler = SigHandler::Handler(termination_handler);
+        let action = SigAction::new(handler, SaFlags::empty(), SigSet::empty());
+
+        unsafe {
+            if let Err(e) = sigaction(Signal::SIGINT, &action) {
+                tracing::error!("Failed to set SIGINT handler: {}", e);
+            }
+            if let Err(e) = sigaction(Signal::SIGTERM, &action) {
+                tracing::error!("Failed to set SIGTERM handler: {}", e);
+            }
         }
     }
 
