@@ -12,7 +12,7 @@ use crate::view::controls::{
 };
 use crate::view::theme::Theme;
 use ratatui::layout::{Constraint, Layout, Rect};
-use ratatui::style::{Modifier, Style};
+use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Clear, Paragraph};
 use ratatui::Frame;
@@ -116,6 +116,11 @@ pub fn render_settings(
     // Render confirmation dialog if showing
     if state.showing_confirm_dialog {
         render_confirm_dialog(frame, modal_area, state, theme);
+    }
+
+    // Render entry detail dialog if showing
+    if state.showing_entry_dialog() {
+        render_entry_dialog(frame, modal_area, state, theme);
     }
 
     // Render help overlay if showing
@@ -424,6 +429,22 @@ fn render_control(
             }
         }
 
+        SettingControl::KeybindingList(state) => {
+            let colors = crate::view::controls::KeybindingListColors {
+                label_fg: theme.editor_fg,
+                key_fg: theme.help_key_fg,
+                action_fg: theme.syntax_function,
+                focused_bg: theme.selection_bg,
+                delete_fg: theme.diagnostic_error_fg,
+                add_fg: theme.syntax_string,
+            };
+            let kb_layout =
+                render_keybinding_list_partial(frame, area, state, &colors, skip_rows, modified);
+            ControlLayoutInfo::KeybindingList {
+                entry_rows: kb_layout.entry_rects,
+            }
+        }
+
         SettingControl::Complex { type_name } => {
             if skip_rows > 0 {
                 return ControlLayoutInfo::Complex;
@@ -680,6 +701,122 @@ fn render_map_partial(
     }
 }
 
+/// Render KeybindingList with partial visibility
+fn render_keybinding_list_partial(
+    frame: &mut Frame,
+    area: Rect,
+    state: &crate::view::controls::KeybindingListState,
+    colors: &crate::view::controls::KeybindingListColors,
+    skip_rows: u16,
+    modified: bool,
+) -> crate::view::controls::KeybindingListLayout {
+    use crate::view::controls::keybinding_list::format_key_combo;
+    use crate::view::controls::FocusState;
+    use ratatui::text::{Line, Span};
+    use ratatui::widgets::Paragraph;
+
+    let empty_layout = crate::view::controls::KeybindingListLayout {
+        entry_rects: Vec::new(),
+        delete_rects: Vec::new(),
+        add_rect: None,
+    };
+
+    if area.height == 0 {
+        return empty_layout;
+    }
+
+    let indent = 2u16;
+    let is_focused = state.focus == FocusState::Focused;
+    let mut entry_rects = Vec::new();
+    let mut delete_rects = Vec::new();
+    let mut content_row = 0u16;
+    let mut y = area.y;
+
+    // Render label (row 0)
+    if content_row >= skip_rows {
+        let modified_indicator = if modified { "• " } else { "" };
+        let label_line = Line::from(vec![Span::styled(
+            format!("{}{}:", modified_indicator, state.label),
+            Style::default().fg(colors.label_fg),
+        )]);
+        frame.render_widget(Paragraph::new(label_line), Rect::new(area.x, y, area.width, 1));
+        y += 1;
+    }
+    content_row += 1;
+
+    // Render each keybinding entry
+    for (idx, binding) in state.bindings.iter().enumerate() {
+        if y >= area.y + area.height {
+            break;
+        }
+
+        if content_row >= skip_rows {
+            let entry_area = Rect::new(area.x + indent, y, area.width.saturating_sub(indent), 1);
+            entry_rects.push(entry_area);
+
+            let is_entry_focused = is_focused && state.focused_index == Some(idx);
+            let bg = if is_entry_focused {
+                colors.focused_bg
+            } else {
+                Color::Reset
+            };
+
+            let key_combo = format_key_combo(binding);
+            let action = binding
+                .get("action")
+                .and_then(|a| a.as_str())
+                .unwrap_or("(no action)");
+
+            let indicator = if is_entry_focused { "> " } else { "  " };
+            let line = Line::from(vec![
+                Span::styled(indicator, Style::default().fg(colors.label_fg).bg(bg)),
+                Span::styled(
+                    format!("{:<20}", key_combo),
+                    Style::default().fg(colors.key_fg).bg(bg),
+                ),
+                Span::styled(" → ", Style::default().fg(colors.label_fg).bg(bg)),
+                Span::styled(action, Style::default().fg(colors.action_fg).bg(bg)),
+                Span::styled(" [x]", Style::default().fg(colors.delete_fg).bg(bg)),
+            ]);
+            frame.render_widget(Paragraph::new(line), entry_area);
+
+            // Track delete button area
+            let delete_x = entry_area.x + entry_area.width.saturating_sub(4);
+            delete_rects.push(Rect::new(delete_x, y, 3, 1));
+
+            y += 1;
+        }
+        content_row += 1;
+    }
+
+    // Render add-new row
+    let add_rect = if y < area.y + area.height && content_row >= skip_rows {
+        let is_add_focused = is_focused && state.focused_index.is_none();
+        let bg = if is_add_focused {
+            colors.focused_bg
+        } else {
+            Color::Reset
+        };
+
+        let indicator = if is_add_focused { "> " } else { "  " };
+        let line = Line::from(vec![
+            Span::styled(indicator, Style::default().fg(colors.label_fg).bg(bg)),
+            Span::styled("[+] Add new", Style::default().fg(colors.add_fg).bg(bg)),
+        ]);
+        let add_area = Rect::new(area.x + indent, y, area.width.saturating_sub(indent), 1);
+        frame.render_widget(Paragraph::new(line), add_area);
+        Some(add_area)
+    } else {
+        None
+    };
+
+    crate::view::controls::KeybindingListLayout {
+        entry_rects,
+        delete_rects,
+        add_rect,
+    }
+}
+
 /// Layout info for a control (for hit testing)
 #[derive(Debug, Clone)]
 pub enum ControlLayoutInfo {
@@ -695,6 +832,9 @@ pub enum ControlLayoutInfo {
         rows: Vec<Rect>,
     },
     Map {
+        entry_rows: Vec<Rect>,
+    },
+    KeybindingList {
         entry_rows: Vec<Rect>,
     },
     Complex,
@@ -1130,6 +1270,320 @@ fn render_confirm_dialog(
         Paragraph::new(help).style(help_style),
         Rect::new(inner.x, button_y + 1, inner.width, 1),
     );
+}
+
+/// Render the entry detail dialog for editing Language/LSP/Keybinding entries
+fn render_entry_dialog(
+    frame: &mut Frame,
+    parent_area: Rect,
+    state: &SettingsState,
+    theme: &Theme,
+) {
+    use super::entry_dialog::{EntryType, FieldValue};
+
+    let Some(dialog) = &state.entry_dialog else {
+        return;
+    };
+
+    // Calculate dialog size - slightly smaller than parent
+    let dialog_width = (parent_area.width * 75 / 100).min(80).max(50);
+    let dialog_height = (parent_area.height * 80 / 100).min(30).max(15);
+    let dialog_x = parent_area.x + (parent_area.width.saturating_sub(dialog_width)) / 2;
+    let dialog_y = parent_area.y + (parent_area.height.saturating_sub(dialog_height)) / 2;
+
+    let dialog_area = Rect::new(dialog_x, dialog_y, dialog_width, dialog_height);
+
+    // Clear and draw border
+    frame.render_widget(Clear, dialog_area);
+
+    let title = match dialog.entry_type {
+        EntryType::Language => format!(" Edit Language: {} ", dialog.entry_key),
+        EntryType::Lsp => format!(" Edit LSP Server: {} ", dialog.entry_key),
+        EntryType::Keybinding => {
+            if dialog.is_new {
+                " New Keybinding ".to_string()
+            } else {
+                " Edit Keybinding ".to_string()
+            }
+        }
+    };
+
+    let block = Block::default()
+        .title(title)
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(theme.popup_border_fg))
+        .style(Style::default().bg(theme.popup_bg));
+    frame.render_widget(block, dialog_area);
+
+    // Inner area
+    let inner = Rect::new(
+        dialog_area.x + 2,
+        dialog_area.y + 1,
+        dialog_area.width.saturating_sub(4),
+        dialog_area.height.saturating_sub(3),
+    );
+
+    // Render fields
+    let label_width = 24u16;
+    let mut y = inner.y;
+
+    for (idx, field) in dialog.fields.iter().enumerate() {
+        if y >= inner.y + inner.height.saturating_sub(2) {
+            break;
+        }
+
+        let is_focused = !dialog.focus_on_buttons && dialog.focused_field == idx;
+        let label_style = if is_focused {
+            Style::default().fg(theme.menu_highlight_fg)
+        } else {
+            Style::default().fg(theme.editor_fg)
+        };
+
+        // Render label
+        let label = format!("{}: ", field.label);
+        let label_span = Span::styled(
+            format!("{:width$}", label, width = label_width as usize),
+            label_style,
+        );
+        frame.render_widget(
+            Paragraph::new(Line::from(label_span)),
+            Rect::new(inner.x, y, label_width, 1),
+        );
+
+        // Render control based on field type
+        let control_x = inner.x + label_width;
+        let control_width = inner.width.saturating_sub(label_width);
+        let control_area = Rect::new(control_x, y, control_width, 1);
+
+        match &field.value {
+            FieldValue::Bool(checked) => {
+                let colors = ToggleColors::from_theme(theme);
+                let toggle_text = if *checked { "[x]" } else { "[ ]" };
+                let toggle_style = if is_focused {
+                    Style::default()
+                        .fg(colors.focused)
+                        .add_modifier(Modifier::BOLD)
+                } else if *checked {
+                    Style::default().fg(colors.checkmark)
+                } else {
+                    Style::default().fg(colors.bracket)
+                };
+                frame.render_widget(
+                    Paragraph::new(toggle_text).style(toggle_style),
+                    control_area,
+                );
+            }
+
+            FieldValue::Text { value, cursor, editing } => {
+                render_dialog_text_field(frame, control_area, value, *cursor, *editing, is_focused, theme);
+            }
+
+            FieldValue::OptionalText { value, cursor, editing } => {
+                let display = value.as_deref().unwrap_or("(none)");
+                render_dialog_text_field(frame, control_area, display, *cursor, *editing, is_focused, theme);
+            }
+
+            FieldValue::StringList { items, focused_index, new_text, cursor: _, editing } => {
+                // Render as compact inline list: [item1, item2, ...]  [+ Add]
+                let items_str = if items.is_empty() {
+                    "(empty)".to_string()
+                } else {
+                    items.join(", ")
+                };
+
+                let style = if is_focused {
+                    Style::default().fg(theme.menu_highlight_fg)
+                } else {
+                    Style::default().fg(theme.editor_fg)
+                };
+
+                // Truncate if too long
+                let max_len = control_width.saturating_sub(10) as usize;
+                let display = if items_str.len() > max_len {
+                    format!("{}...", &items_str[..max_len.saturating_sub(3)])
+                } else {
+                    items_str
+                };
+
+                frame.render_widget(
+                    Paragraph::new(display).style(style),
+                    control_area,
+                );
+
+                // Show list items on next lines if focused
+                if is_focused && !items.is_empty() {
+                    y += 1;
+                    for (item_idx, item) in items.iter().enumerate() {
+                        if y >= inner.y + inner.height.saturating_sub(2) {
+                            break;
+                        }
+                        let item_focused = *focused_index == Some(item_idx);
+                        let item_style = if item_focused {
+                            Style::default()
+                                .fg(theme.menu_highlight_fg)
+                                .add_modifier(Modifier::BOLD)
+                        } else {
+                            Style::default().fg(theme.editor_fg)
+                        };
+                        let prefix = if item_focused { "  > " } else { "    " };
+                        frame.render_widget(
+                            Paragraph::new(format!("{}{} [x]", prefix, item)).style(item_style),
+                            Rect::new(control_x, y, control_width, 1),
+                        );
+                        y += 1;
+                    }
+                    // Add input row
+                    if y < inner.y + inner.height.saturating_sub(2) {
+                        let input_focused = focused_index.is_none();
+                        let input_style = if input_focused && *editing {
+                            Style::default().fg(theme.cursor)
+                        } else if input_focused {
+                            Style::default().fg(theme.menu_highlight_fg)
+                        } else {
+                            Style::default().fg(theme.line_number_fg)
+                        };
+                        frame.render_widget(
+                            Paragraph::new(format!("    [{}] [+]", new_text)).style(input_style),
+                            Rect::new(control_x, y, control_width, 1),
+                        );
+                    }
+                }
+            }
+
+            FieldValue::Integer { value, editing, text, .. } => {
+                let display = if *editing { text.clone() } else { value.to_string() };
+                render_dialog_text_field(frame, control_area, &display, display.len(), *editing, is_focused, theme);
+            }
+
+            FieldValue::Dropdown { options, selected, open } => {
+                let current = options.get(*selected).map(|s| s.as_str()).unwrap_or("");
+                let style = if is_focused {
+                    Style::default().fg(theme.menu_highlight_fg)
+                } else {
+                    Style::default().fg(theme.editor_fg)
+                };
+                frame.render_widget(
+                    Paragraph::new(format!("[{} ▼]", current)).style(style),
+                    control_area,
+                );
+
+                // Show dropdown options if open
+                if *open {
+                    for (opt_idx, opt) in options.iter().enumerate() {
+                        y += 1;
+                        if y >= inner.y + inner.height.saturating_sub(2) {
+                            break;
+                        }
+                        let opt_style = if opt_idx == *selected {
+                            Style::default()
+                                .fg(theme.menu_highlight_fg)
+                                .add_modifier(Modifier::BOLD)
+                        } else {
+                            Style::default().fg(theme.editor_fg)
+                        };
+                        let prefix = if opt_idx == *selected { "  > " } else { "    " };
+                        frame.render_widget(
+                            Paragraph::new(format!("{}{}", prefix, opt)).style(opt_style),
+                            Rect::new(control_x, y, control_width, 1),
+                        );
+                    }
+                }
+            }
+
+            FieldValue::Object { json, .. } => {
+                let preview = match json {
+                    serde_json::Value::Object(obj) => format!("{{...}} ({} fields)", obj.len()),
+                    _ => "{}".to_string(),
+                };
+                let style = Style::default().fg(theme.line_number_fg);
+                frame.render_widget(
+                    Paragraph::new(preview).style(style),
+                    control_area,
+                );
+            }
+        }
+
+        y += 1;
+    }
+
+    // Render buttons at bottom
+    let button_y = dialog_area.y + dialog_area.height - 2;
+    let buttons = ["[ Save ]", "[ Cancel ]"];
+    let button_width: u16 = buttons.iter().map(|b| b.len() as u16 + 2).sum();
+    let button_x = dialog_area.x + (dialog_area.width.saturating_sub(button_width)) / 2;
+
+    let mut x = button_x;
+    for (idx, label) in buttons.iter().enumerate() {
+        let is_selected = dialog.focus_on_buttons && dialog.focused_button == idx;
+        let style = if is_selected {
+            Style::default()
+                .fg(theme.menu_highlight_fg)
+                .add_modifier(Modifier::BOLD | Modifier::REVERSED)
+        } else {
+            Style::default().fg(theme.editor_fg)
+        };
+        frame.render_widget(
+            Paragraph::new(*label).style(style),
+            Rect::new(x, button_y, label.len() as u16, 1),
+        );
+        x += label.len() as u16 + 2;
+    }
+
+    // Render help text
+    let help = "↑↓:Navigate  Tab:Fields/Buttons  Enter:Edit/Confirm  Esc:Cancel";
+    let help_style = Style::default().fg(theme.line_number_fg);
+    frame.render_widget(
+        Paragraph::new(help).style(help_style),
+        Rect::new(dialog_area.x + 2, button_y + 1, dialog_area.width.saturating_sub(4), 1),
+    );
+}
+
+/// Helper to render a text field in the entry dialog
+fn render_dialog_text_field(
+    frame: &mut Frame,
+    area: Rect,
+    value: &str,
+    cursor: usize,
+    editing: bool,
+    focused: bool,
+    theme: &Theme,
+) {
+    let style = if editing {
+        Style::default().fg(theme.cursor)
+    } else if focused {
+        Style::default().fg(theme.menu_highlight_fg)
+    } else {
+        Style::default().fg(theme.editor_fg)
+    };
+
+    // Truncate if needed
+    let max_len = area.width.saturating_sub(2) as usize;
+    let display = if value.len() > max_len {
+        format!("{}...", &value[..max_len.saturating_sub(3)])
+    } else {
+        value.to_string()
+    };
+
+    frame.render_widget(
+        Paragraph::new(format!("[{}]", display)).style(style),
+        area,
+    );
+
+    // Show cursor if editing
+    if editing && cursor <= display.len() && cursor < area.width.saturating_sub(1) as usize {
+        let cursor_x = area.x + 1 + cursor as u16;
+        let cursor_char = display.chars().nth(cursor).unwrap_or(' ');
+        let cursor_span = Span::styled(
+            cursor_char.to_string(),
+            Style::default()
+                .fg(theme.cursor)
+                .add_modifier(Modifier::REVERSED),
+        );
+        frame.render_widget(
+            Paragraph::new(Line::from(cursor_span)),
+            Rect::new(cursor_x, area.y, 1, 1),
+        );
+    }
 }
 
 /// Render the help overlay showing keyboard shortcuts

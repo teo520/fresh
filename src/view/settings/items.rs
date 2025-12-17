@@ -4,7 +4,8 @@
 
 use super::schema::{SettingCategory, SettingSchema, SettingType};
 use crate::view::controls::{
-    DropdownState, MapState, NumberInputState, TextInputState, TextListState, ToggleState,
+    DropdownState, KeybindingListState, MapState, NumberInputState, TextInputState, TextListState,
+    ToggleState,
 };
 use crate::view::ui::{FocusRegion, ScrollItem};
 
@@ -35,6 +36,8 @@ pub enum SettingControl {
     TextList(TextListState),
     /// Map/dictionary control for key-value pairs
     Map(MapState),
+    /// Keybinding list control
+    KeybindingList(KeybindingListState),
     /// Complex settings that can't be edited inline
     Complex {
         type_name: String,
@@ -76,6 +79,11 @@ impl SettingControl {
                 } else {
                     1
                 }
+            }
+            // KeybindingList needs: 1 label + bindings + 1 add-new row
+            SettingControl::KeybindingList(state) => {
+                // 1 for label + bindings count + 1 for add-new row
+                (state.bindings.len() + 2) as u16
             }
             // All other controls fit in 1 line
             _ => 1,
@@ -160,6 +168,31 @@ impl ScrollItem for SettingItem {
                 regions.push(FocusRegion {
                     id: 1 + state.entries.len(),
                     y_offset: y,
+                    height: 1,
+                });
+                regions
+            }
+            // KeybindingList: each entry row is a focus region
+            SettingControl::KeybindingList(state) => {
+                let mut regions = Vec::new();
+                // Label row
+                regions.push(FocusRegion {
+                    id: 0,
+                    y_offset: 0,
+                    height: 1,
+                });
+                // Each binding (id = 1 + index)
+                for i in 0..state.bindings.len() {
+                    regions.push(FocusRegion {
+                        id: 1 + i,
+                        y_offset: 1 + i as u16,
+                        height: 1,
+                    });
+                }
+                // Add-new row
+                regions.push(FocusRegion {
+                    id: 1 + state.bindings.len(),
+                    y_offset: 1 + state.bindings.len() as u16,
                     height: 1,
                 });
                 regions
@@ -338,6 +371,17 @@ fn build_item(schema: &SettingSchema, config_value: &serde_json::Value) -> Setti
             SettingControl::Map(state)
         }
 
+        SettingType::KeybindingArray => {
+            // Get current keybindings array or default
+            let bindings_value = current_value
+                .cloned()
+                .or_else(|| schema.default.clone())
+                .unwrap_or_else(|| serde_json::json!([]));
+
+            let state = KeybindingListState::new(&schema.name).with_bindings(&bindings_value);
+            SettingControl::KeybindingList(state)
+        }
+
         SettingType::Complex => SettingControl::Complex {
             type_name: "Complex".to_string(),
         },
@@ -387,6 +431,8 @@ pub fn control_to_value(control: &SettingControl) -> serde_json::Value {
         }
 
         SettingControl::Map(state) => state.to_value(),
+
+        SettingControl::KeybindingList(state) => state.to_value(),
 
         SettingControl::Complex { .. } => serde_json::Value::Null,
     }

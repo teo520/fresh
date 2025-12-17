@@ -3,6 +3,7 @@
 //! Tracks the current state of the settings UI, pending changes,
 //! and provides methods for reading/writing config values.
 
+use super::entry_dialog::EntryDialogState;
 use super::items::{control_to_value, SettingControl, SettingItem, SettingsPage};
 use super::layout::SettingsHit;
 use super::schema::{parse_schema, SettingCategory};
@@ -69,6 +70,8 @@ pub struct SettingsState {
     pub hover_position: Option<(u16, u16)>,
     /// Current hover hit result (computed from hover_position and cached layout)
     pub hover_hit: Option<SettingsHit>,
+    /// Entry detail dialog state (for editing Language/LSP/Keybinding entries)
+    pub entry_dialog: Option<EntryDialogState>,
 }
 
 impl SettingsState {
@@ -100,6 +103,7 @@ impl SettingsState {
             editing_text: false,
             hover_position: None,
             hover_hit: None,
+            entry_dialog: None,
         })
     }
 
@@ -331,6 +335,7 @@ impl SettingsState {
                     SettingControl::Text(state) => state.focus = focus,
                     SettingControl::TextList(state) => state.focus = focus,
                     SettingControl::Map(state) => state.focus = focus,
+                    SettingControl::KeybindingList(state) => state.focus = focus,
                     SettingControl::Complex { .. } => {}
                 }
             }
@@ -447,6 +452,92 @@ impl SettingsState {
     /// Hide the help overlay
     pub fn hide_help(&mut self) {
         self.showing_help = false;
+    }
+
+    /// Check if the entry dialog is showing
+    pub fn showing_entry_dialog(&self) -> bool {
+        self.entry_dialog.is_some()
+    }
+
+    /// Open the entry dialog for the currently focused map entry
+    pub fn open_entry_dialog(&mut self) {
+        let Some(item) = self.current_item() else {
+            return;
+        };
+
+        // Determine what type of entry we're editing based on the path
+        let path = item.path.as_str();
+        let SettingControl::Map(map_state) = &item.control else {
+            return;
+        };
+
+        // Get the focused entry
+        let Some(entry_idx) = map_state.focused_entry else {
+            return;
+        };
+        let Some((key, value)) = map_state.entries.get(entry_idx) else {
+            return;
+        };
+
+        // Create the appropriate dialog
+        let dialog = if path == "/languages" {
+            EntryDialogState::new_language(key.clone(), value, false)
+        } else if path == "/lsp" {
+            EntryDialogState::new_lsp(key.clone(), value, false)
+        } else {
+            return;
+        };
+
+        self.entry_dialog = Some(dialog);
+    }
+
+    /// Open entry dialog for adding a new entry
+    pub fn open_new_entry_dialog(&mut self, entry_type: &str, key: String) {
+        let dialog = match entry_type {
+            "language" => {
+                EntryDialogState::new_language(key, &serde_json::json!({}), true)
+            }
+            "lsp" => {
+                EntryDialogState::new_lsp(key, &serde_json::json!({}), true)
+            }
+            _ => return,
+        };
+        self.entry_dialog = Some(dialog);
+    }
+
+    /// Close the entry dialog without saving
+    pub fn close_entry_dialog(&mut self) {
+        self.entry_dialog = None;
+    }
+
+    /// Save the entry dialog and apply changes
+    pub fn save_entry_dialog(&mut self) {
+        let Some(dialog) = self.entry_dialog.take() else {
+            return;
+        };
+
+        let value = dialog.to_value();
+        let path = format!("{}/{}", dialog.map_path, dialog.entry_key);
+
+        // Update the map control with the new value
+        if let Some(item) = self.current_item_mut() {
+            if let SettingControl::Map(map_state) = &mut item.control {
+                // Find or add the entry
+                if let Some(entry) = map_state
+                    .entries
+                    .iter_mut()
+                    .find(|(k, _)| k == &dialog.entry_key)
+                {
+                    entry.1 = value.clone();
+                } else {
+                    map_state.entries.push((dialog.entry_key.clone(), value.clone()));
+                    map_state.entries.sort_by(|a, b| a.0.cmp(&b.0));
+                }
+            }
+        }
+
+        // Record the pending change
+        self.set_pending_change(&path, value);
     }
 
     /// Get the maximum scroll offset for the current page (in rows)
@@ -884,6 +975,11 @@ fn update_control_from_value(control: &mut SettingControl, value: &serde_json::V
             if let Some(obj) = value.as_object() {
                 state.entries = obj.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
                 state.entries.sort_by(|a, b| a.0.cmp(&b.0));
+            }
+        }
+        SettingControl::KeybindingList(state) => {
+            if let Some(arr) = value.as_array() {
+                state.bindings = arr.clone();
             }
         }
         SettingControl::Complex { .. } => {}

@@ -91,6 +91,8 @@ pub enum SettingType {
     Enum { options: Vec<EnumOption> },
     /// Array of strings
     StringArray,
+    /// Array of keybindings
+    KeybindingArray,
     /// Nested object (category)
     Object { properties: Vec<SettingSchema> },
     /// Map with string keys (for languages, lsp configs)
@@ -378,11 +380,17 @@ fn determine_type(
         }
         Some("string") => SettingType::String,
         Some("array") => {
-            // Check if it's an array of strings
+            // Check if it's an array of strings or keybindings
             if let Some(ref items) = resolved.items {
                 let item_resolved = resolve_ref(items, defs);
                 if item_resolved.schema_type.as_ref().and_then(|t| t.primary()) == Some("string") {
                     return SettingType::StringArray;
+                }
+                // Check if it's an array of Keybinding objects
+                if let Some(ref ref_path) = items.ref_path {
+                    if ref_path.ends_with("/Keybinding") {
+                        return SettingType::KeybindingArray;
+                    }
                 }
             }
             SettingType::Complex

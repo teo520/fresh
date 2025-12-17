@@ -20,6 +20,7 @@
 
 pub mod button;
 pub mod dropdown;
+pub mod keybinding_list;
 pub mod map_input;
 pub mod number_input;
 pub mod text_input;
@@ -28,6 +29,9 @@ pub mod toggle;
 
 pub use button::{render_button, ButtonColors, ButtonLayout, ButtonState};
 pub use dropdown::{render_dropdown, DropdownColors, DropdownLayout, DropdownState};
+pub use keybinding_list::{
+    render_keybinding_list, KeybindingListColors, KeybindingListLayout, KeybindingListState,
+};
 pub use map_input::{render_map, MapColors, MapLayout, MapState};
 pub use number_input::{
     render_number_input, NumberInputColors, NumberInputLayout, NumberInputState,

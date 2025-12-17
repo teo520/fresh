@@ -1853,6 +1853,7 @@ impl Editor {
                     SettingControl::Text(_) => "text",
                     SettingControl::TextList(_) => "textlist",
                     SettingControl::Map(_) => "map",
+                    SettingControl::KeybindingList(_) => "keybindinglist",
                     SettingControl::Complex { .. } => "complex",
                 })
             } else {
@@ -1889,19 +1890,33 @@ impl Editor {
                 }
             }
             Some("map") => {
-                // For Map controls: add new entry if on add-new row, or toggle expand if on entry
+                // For Map controls: check if it's Languages or LSP to open entry dialog
+                let path = self
+                    .settings_state
+                    .as_ref()
+                    .and_then(|s| s.current_item())
+                    .map(|item| item.path.clone());
+
+                let is_editable_map = matches!(path.as_deref(), Some("/languages") | Some("/lsp"));
+
                 if let Some(ref mut state) = self.settings_state {
                     if let Some(item) = state.current_item_mut() {
                         if let SettingControl::Map(ref mut map_state) = item.control {
                             if map_state.focused_entry.is_none() {
-                                // On add-new row: add the entry
-                                map_state.add_entry_from_input();
-                            } else if let Some(idx) = map_state.focused_entry {
-                                // On entry row: toggle expanded
-                                if map_state.expanded.contains(&idx) {
-                                    map_state.expanded.retain(|&i| i != idx);
-                                } else {
-                                    map_state.expanded.push(idx);
+                                // On add-new row: start editing to add new entry
+                                state.start_editing();
+                            } else if is_editable_map {
+                                // For Languages/LSP: open entry dialog
+                                // (The open_entry_dialog doesn't use item, so we can just call it)
+                                state.open_entry_dialog();
+                            } else {
+                                // For other maps: toggle expanded
+                                if let Some(idx) = map_state.focused_entry {
+                                    if map_state.expanded.contains(&idx) {
+                                        map_state.expanded.retain(|&i| i != idx);
+                                    } else {
+                                        map_state.expanded.push(idx);
+                                    }
                                 }
                             }
                         }

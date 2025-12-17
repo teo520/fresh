@@ -358,6 +358,16 @@ impl Editor {
                 }
             }
 
+            // Check if entry detail dialog is showing
+            let showing_entry_dialog = self
+                .settings_state
+                .as_ref()
+                .map_or(false, |s| s.showing_entry_dialog());
+
+            if showing_entry_dialog {
+                return self.handle_entry_dialog_input(code, modifiers);
+            }
+
             // Check if text editing is active (for TextList controls)
             let editing_text = self
                 .settings_state
@@ -404,7 +414,30 @@ impl Editor {
                         return Ok(());
                     }
                     crossterm::event::KeyCode::Enter => {
-                        if let Some(ref mut state) = self.settings_state {
+                        // Check if we're on a Map entry that should open entry dialog
+                        let should_open_entry_dialog = self.settings_state.as_ref().map_or(
+                            false,
+                            |s| {
+                                use crate::view::settings::items::SettingControl;
+                                if let Some(item) = s.current_item() {
+                                    if let SettingControl::Map(map_state) = &item.control {
+                                        // If focused on an existing entry (not add-new)
+                                        // and it's an editable map
+                                        if map_state.focused_entry.is_some() {
+                                            let path = &item.path;
+                                            return path == "/languages" || path == "/lsp";
+                                        }
+                                    }
+                                }
+                                false
+                            },
+                        );
+
+                        if should_open_entry_dialog {
+                            if let Some(ref mut state) = self.settings_state {
+                                state.open_entry_dialog();
+                            }
+                        } else if let Some(ref mut state) = self.settings_state {
                             // Add the item and record change
                             state.text_add_item();
                         }
@@ -4017,6 +4050,288 @@ impl Editor {
 
             // Update the split ratio
             let _ = self.split_manager.set_ratio(split_id, new_ratio);
+        }
+
+        Ok(())
+    }
+
+    /// Handle keyboard input for the entry detail dialog
+    fn handle_entry_dialog_input(
+        &mut self,
+        code: crossterm::event::KeyCode,
+        modifiers: crossterm::event::KeyModifiers,
+    ) -> std::io::Result<()> {
+        use crate::view::settings::entry_dialog::FieldValue;
+
+        // Check if we're editing a field
+        let is_editing = self
+            .settings_state
+            .as_ref()
+            .and_then(|s| s.entry_dialog.as_ref())
+            .map_or(false, |d| d.is_editing());
+
+        if is_editing {
+            // Handle text editing input
+            match code {
+                crossterm::event::KeyCode::Char(c) if modifiers.is_empty() => {
+                    if let Some(ref mut state) = self.settings_state {
+                        if let Some(ref mut dialog) = state.entry_dialog {
+                            dialog.insert_char(c);
+                        }
+                    }
+                    return Ok(());
+                }
+                crossterm::event::KeyCode::Backspace => {
+                    if let Some(ref mut state) = self.settings_state {
+                        if let Some(ref mut dialog) = state.entry_dialog {
+                            dialog.backspace();
+                        }
+                    }
+                    return Ok(());
+                }
+                crossterm::event::KeyCode::Left => {
+                    if let Some(ref mut state) = self.settings_state {
+                        if let Some(ref mut dialog) = state.entry_dialog {
+                            dialog.cursor_left();
+                        }
+                    }
+                    return Ok(());
+                }
+                crossterm::event::KeyCode::Right => {
+                    if let Some(ref mut state) = self.settings_state {
+                        if let Some(ref mut dialog) = state.entry_dialog {
+                            dialog.cursor_right();
+                        }
+                    }
+                    return Ok(());
+                }
+                crossterm::event::KeyCode::Enter => {
+                    // Check if it's a string list with add functionality
+                    let is_string_list = self
+                        .settings_state
+                        .as_ref()
+                        .and_then(|s| s.entry_dialog.as_ref())
+                        .and_then(|d| d.current_field())
+                        .map_or(false, |f| matches!(f.value, FieldValue::StringList { .. }));
+
+                    if is_string_list {
+                        if let Some(ref mut state) = self.settings_state {
+                            if let Some(ref mut dialog) = state.entry_dialog {
+                                dialog.add_list_item();
+                            }
+                        }
+                    } else {
+                        // Stop editing for text fields
+                        if let Some(ref mut state) = self.settings_state {
+                            if let Some(ref mut dialog) = state.entry_dialog {
+                                dialog.stop_editing();
+                            }
+                        }
+                    }
+                    return Ok(());
+                }
+                crossterm::event::KeyCode::Esc => {
+                    // Stop editing
+                    if let Some(ref mut state) = self.settings_state {
+                        if let Some(ref mut dialog) = state.entry_dialog {
+                            dialog.stop_editing();
+                        }
+                    }
+                    return Ok(());
+                }
+                crossterm::event::KeyCode::Delete => {
+                    // Delete focused item in string list
+                    if let Some(ref mut state) = self.settings_state {
+                        if let Some(ref mut dialog) = state.entry_dialog {
+                            dialog.delete_list_item();
+                        }
+                    }
+                    return Ok(());
+                }
+                _ => return Ok(()),
+            }
+        }
+
+        // Check if dropdown is open
+        let dropdown_open = self
+            .settings_state
+            .as_ref()
+            .and_then(|s| s.entry_dialog.as_ref())
+            .and_then(|d| d.current_field())
+            .map_or(false, |f| matches!(f.value, FieldValue::Dropdown { open: true, .. }));
+
+        if dropdown_open {
+            match code {
+                crossterm::event::KeyCode::Up => {
+                    if let Some(ref mut state) = self.settings_state {
+                        if let Some(ref mut dialog) = state.entry_dialog {
+                            dialog.dropdown_prev();
+                        }
+                    }
+                    return Ok(());
+                }
+                crossterm::event::KeyCode::Down => {
+                    if let Some(ref mut state) = self.settings_state {
+                        if let Some(ref mut dialog) = state.entry_dialog {
+                            dialog.dropdown_next();
+                        }
+                    }
+                    return Ok(());
+                }
+                crossterm::event::KeyCode::Enter => {
+                    if let Some(ref mut state) = self.settings_state {
+                        if let Some(ref mut dialog) = state.entry_dialog {
+                            dialog.stop_editing();
+                        }
+                    }
+                    return Ok(());
+                }
+                crossterm::event::KeyCode::Esc => {
+                    if let Some(ref mut state) = self.settings_state {
+                        if let Some(ref mut dialog) = state.entry_dialog {
+                            dialog.stop_editing();
+                        }
+                    }
+                    return Ok(());
+                }
+                _ => return Ok(()),
+            }
+        }
+
+        // Normal navigation
+        match code {
+            crossterm::event::KeyCode::Up => {
+                if let Some(ref mut state) = self.settings_state {
+                    if let Some(ref mut dialog) = state.entry_dialog {
+                        // Check if current field is a string list for internal navigation
+                        let is_list_nav = dialog.current_field().map_or(false, |f| {
+                            matches!(f.value, FieldValue::StringList { .. })
+                        });
+                        if is_list_nav && !dialog.focus_on_buttons {
+                            dialog.list_prev();
+                        } else {
+                            dialog.focus_prev();
+                        }
+                    }
+                }
+            }
+            crossterm::event::KeyCode::Down => {
+                if let Some(ref mut state) = self.settings_state {
+                    if let Some(ref mut dialog) = state.entry_dialog {
+                        // Check if current field is a string list for internal navigation
+                        let is_list_nav = dialog.current_field().map_or(false, |f| {
+                            matches!(f.value, FieldValue::StringList { .. })
+                        });
+                        if is_list_nav && !dialog.focus_on_buttons {
+                            dialog.list_next();
+                        } else {
+                            dialog.focus_next();
+                        }
+                    }
+                }
+            }
+            crossterm::event::KeyCode::Tab => {
+                if let Some(ref mut state) = self.settings_state {
+                    if let Some(ref mut dialog) = state.entry_dialog {
+                        dialog.focus_next();
+                    }
+                }
+            }
+            crossterm::event::KeyCode::BackTab => {
+                if let Some(ref mut state) = self.settings_state {
+                    if let Some(ref mut dialog) = state.entry_dialog {
+                        dialog.focus_prev();
+                    }
+                }
+            }
+            crossterm::event::KeyCode::Enter => {
+                // Check what's focused
+                let action = self
+                    .settings_state
+                    .as_ref()
+                    .and_then(|s| s.entry_dialog.as_ref())
+                    .map(|d| {
+                        if d.focus_on_buttons {
+                            if d.focused_button == 0 {
+                                "save"
+                            } else {
+                                "cancel"
+                            }
+                        } else {
+                            // Check field type
+                            d.current_field()
+                                .map(|f| match &f.value {
+                                    FieldValue::Bool(_) => "toggle",
+                                    FieldValue::Dropdown { .. } => "dropdown",
+                                    FieldValue::Text { .. }
+                                    | FieldValue::OptionalText { .. }
+                                    | FieldValue::Integer { .. }
+                                    | FieldValue::StringList { .. } => "edit",
+                                    FieldValue::Object { .. } => "none",
+                                })
+                                .unwrap_or("none")
+                        }
+                    });
+
+                match action {
+                    Some("save") => {
+                        if let Some(ref mut state) = self.settings_state {
+                            state.save_entry_dialog();
+                        }
+                    }
+                    Some("cancel") => {
+                        if let Some(ref mut state) = self.settings_state {
+                            state.close_entry_dialog();
+                        }
+                    }
+                    Some("toggle") => {
+                        if let Some(ref mut state) = self.settings_state {
+                            if let Some(ref mut dialog) = state.entry_dialog {
+                                dialog.toggle_current();
+                            }
+                        }
+                    }
+                    Some("dropdown") => {
+                        if let Some(ref mut state) = self.settings_state {
+                            if let Some(ref mut dialog) = state.entry_dialog {
+                                dialog.toggle_current();
+                            }
+                        }
+                    }
+                    Some("edit") => {
+                        if let Some(ref mut state) = self.settings_state {
+                            if let Some(ref mut dialog) = state.entry_dialog {
+                                dialog.start_editing();
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            crossterm::event::KeyCode::Char(' ') => {
+                // Space toggles boolean fields
+                let is_bool = self
+                    .settings_state
+                    .as_ref()
+                    .and_then(|s| s.entry_dialog.as_ref())
+                    .and_then(|d| d.current_field())
+                    .map_or(false, |f| matches!(f.value, FieldValue::Bool(_)));
+
+                if is_bool {
+                    if let Some(ref mut state) = self.settings_state {
+                        if let Some(ref mut dialog) = state.entry_dialog {
+                            dialog.toggle_current();
+                        }
+                    }
+                }
+            }
+            crossterm::event::KeyCode::Esc => {
+                // Close dialog without saving
+                if let Some(ref mut state) = self.settings_state {
+                    state.close_entry_dialog();
+                }
+            }
+            _ => {}
         }
 
         Ok(())
