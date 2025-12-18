@@ -25,9 +25,38 @@ impl Editor {
         let col = mouse_event.column;
         let row = mouse_event.row;
 
+        // Detect double-click for left button down events (used by all handlers)
+        let is_double_click = if matches!(mouse_event.kind, MouseEventKind::Down(MouseButton::Left))
+        {
+            let now = self.time_source.now();
+            let is_double = if let (Some(previous_time), Some(previous_pos)) =
+                (self.previous_click_time, self.previous_click_position)
+            {
+                let double_click_threshold =
+                    std::time::Duration::from_millis(self.config.editor.double_click_time_ms);
+                let within_time = now.duration_since(previous_time) < double_click_threshold;
+                let same_position = previous_pos == (col, row);
+                within_time && same_position
+            } else {
+                false
+            };
+
+            // Update click tracking
+            if is_double {
+                self.previous_click_time = None;
+                self.previous_click_position = None;
+            } else {
+                self.previous_click_time = Some(now);
+                self.previous_click_position = Some((col, row));
+            }
+            is_double
+        } else {
+            false
+        };
+
         // When settings modal is open, capture all mouse events
         if self.settings_state.as_ref().map_or(false, |s| s.visible) {
-            return self.handle_settings_mouse(mouse_event);
+            return self.handle_settings_mouse(mouse_event, is_double_click);
         }
 
         // Cancel LSP rename prompt on any mouse interaction
@@ -56,31 +85,11 @@ impl Editor {
 
         match mouse_event.kind {
             MouseEventKind::Down(MouseButton::Left) => {
-                // detect double clicks, 500 ms is arbitrary but reasonable
-                let now = self.time_source.now();
-                let is_double_click = if let (Some(previous_time), Some(previous_pos)) =
-                    (self.previous_click_time, self.previous_click_position)
-                {
-                    let double_click_threshold =
-                        std::time::Duration::from_millis(self.config.editor.double_click_time_ms);
-                    let within_time = now.duration_since(previous_time) < double_click_threshold;
-                    let same_position = previous_pos == (col, row);
-                    within_time && same_position
-                } else {
-                    false
-                };
-
                 if is_double_click {
                     // Double click detected - both clicks within time threshold AND at same position
                     self.handle_mouse_double_click(col, row)?;
-                    self.previous_click_time = None;
-                    self.previous_click_position = None;
                     needs_render = true;
                     return Ok(needs_render);
-                } else {
-                    // Not a double click - store time and position for next click
-                    self.previous_click_time = Some(now);
-                    self.previous_click_position = Some((col, row));
                 }
                 self.handle_mouse_click(col, row)?;
                 needs_render = true;

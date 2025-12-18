@@ -5,6 +5,7 @@
 
 use crate::app::Editor;
 
+use super::items::SettingControl;
 use super::{FocusPanel, SettingsHit, SettingsLayout};
 
 impl Editor {
@@ -12,6 +13,7 @@ impl Editor {
     pub(crate) fn handle_settings_mouse(
         &mut self,
         mouse_event: crossterm::event::MouseEvent,
+        is_double_click: bool,
     ) -> std::io::Result<bool> {
         use crossterm::event::{MouseButton, MouseEventKind};
 
@@ -178,10 +180,29 @@ impl Editor {
                     state.start_editing();
                 }
             }
-            SettingsHit::ControlMapRow(idx, _row_idx) => {
+            SettingsHit::ControlMapRow(idx, row_idx) => {
                 if let Some(ref mut state) = self.settings_state {
                     state.focus_panel = FocusPanel::Settings;
                     state.selected_item = idx;
+
+                    // Set focus on the clicked entry within the map
+                    if let Some(page) = state.pages.get_mut(state.selected_category) {
+                        if let Some(item) = page.items.get_mut(idx) {
+                            if let SettingControl::Map(map_state) = &mut item.control {
+                                // Focus the clicked row (row_idx matches entry index, or None for add-new)
+                                if row_idx < map_state.entries.len() {
+                                    map_state.focused_entry = Some(row_idx);
+                                } else {
+                                    map_state.focused_entry = None; // Add-new row
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Double-click opens the entry dialog
+                if is_double_click {
+                    self.settings_activate_current();
                 }
             }
             SettingsHit::SaveButton => {
