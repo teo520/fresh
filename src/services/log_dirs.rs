@@ -246,7 +246,6 @@ fn is_process_running(pid: u32) -> bool {
     #[cfg(windows)]
     {
         // On Windows, try to open the process
-        use std::os::windows::io::FromRawHandle;
         use windows_sys::Win32::Foundation::CloseHandle;
         use windows_sys::Win32::System::Threading::{
             OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION,
@@ -254,7 +253,7 @@ fn is_process_running(pid: u32) -> bool {
 
         unsafe {
             let handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid);
-            if handle != 0 {
+            if !handle.is_null() {
                 CloseHandle(handle);
                 true
             } else {
