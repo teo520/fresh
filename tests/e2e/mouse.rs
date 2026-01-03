@@ -1743,3 +1743,133 @@ fn test_double_click_requires_same_position() {
         "Double-click at same position SHOULD select a word, but got empty selection"
     );
 }
+
+/// Test that with blinking_bar cursor style, the first character of a selection
+/// has the same background color as the rest of the selection.
+///
+/// Bug #614: When using blinking_bar cursor style and selecting text by dragging
+/// upward and to the left, the first character in the selection is displayed with
+/// a different background color than the rest of the selection.
+///
+/// This test should FAIL until the bug is fixed.
+#[test]
+fn test_blinking_bar_selection_first_char_color() {
+    use fresh::config::{Config, CursorStyle};
+
+    // Create config with blinking_bar cursor style
+    let mut config = Config::default();
+    config.editor.cursor_style = CursorStyle::BlinkingBar;
+
+    let mut harness = EditorTestHarness::with_config(80, 24, config).unwrap();
+
+    // Load content with multiple lines
+    let content = "Hello World\nThis is line 2\nThis is line 3\n";
+    let _fixture = harness.load_buffer_from_text(content).unwrap();
+    harness.render().unwrap();
+
+    let (content_first_row, _) = harness.content_area_rows();
+
+    // Get the selection background color from the theme
+    let theme = harness.editor().theme();
+    let selection_bg = theme.selection_bg;
+
+    // Drag from end of line 2 to start of line 1 (upward and to the left)
+    // This reproduces the bug scenario described in issue #614
+    // The gutter is ~8 chars, so:
+    // - Line 1 "Hello World" starts at column 8
+    // - Line 2 "This is line 2" starts at column 8
+    let start_col = 22; // End of "This is line 2" (around column 8 + 14)
+    let start_row = content_first_row as u16 + 1; // Line 2
+    let end_col = 8; // Start of "Hello" (beginning of text after gutter)
+    let end_row = content_first_row as u16; // Line 1
+
+    println!(
+        "Dragging from ({}, {}) to ({}, {})",
+        start_col, start_row, end_col, end_row
+    );
+    harness
+        .mouse_drag(start_col, start_row, end_col, end_row)
+        .unwrap();
+    harness.render().unwrap();
+
+    // Verify we have a selection
+    assert!(harness.has_selection(), "Should have selection after drag");
+    let selected_text = harness.get_selected_text();
+    println!("Selected text: '{}'", selected_text);
+
+    // Now verify that ALL selected characters have the selection background color
+    // The selection should include "Hello World\n" and part of "This is line 2"
+    // But critically, the FIRST character 'H' should have the same bg as the rest
+
+    let buffer = harness.buffer();
+
+    // Check the first few characters of the selection (on line 1)
+    // Line 1 content starts at column 8 (after gutter "   1 │ ")
+    let first_char_col = 8; // 'H' in "Hello"
+    let first_char_row = end_row;
+    let second_char_col = 9; // 'e' in "Hello"
+    let third_char_col = 10; // 'l' in "Hello"
+
+    // Get background colors of the first few selected characters
+    let first_char_idx = buffer.index_of(first_char_col, first_char_row);
+    let second_char_idx = buffer.index_of(second_char_col, first_char_row);
+    let third_char_idx = buffer.index_of(third_char_col, first_char_row);
+
+    let first_char_cell = &buffer.content[first_char_idx];
+    let second_char_cell = &buffer.content[second_char_idx];
+    let third_char_cell = &buffer.content[third_char_idx];
+
+    println!(
+        "First char '{}' bg: {:?}",
+        first_char_cell.symbol(),
+        first_char_cell.bg
+    );
+    println!(
+        "Second char '{}' bg: {:?}",
+        second_char_cell.symbol(),
+        second_char_cell.bg
+    );
+    println!(
+        "Third char '{}' bg: {:?}",
+        third_char_cell.symbol(),
+        third_char_cell.bg
+    );
+    println!("Expected selection_bg: {:?}", selection_bg);
+
+    // All selected characters should have the selection background color
+    assert_eq!(
+        first_char_cell.bg, selection_bg,
+        "BUG #614: First character '{}' of selection has wrong background color {:?}, expected selection_bg {:?}. \
+         With blinking_bar cursor style, the first character displays differently than the rest.",
+        first_char_cell.symbol(),
+        first_char_cell.bg,
+        selection_bg
+    );
+
+    assert_eq!(
+        second_char_cell.bg,
+        selection_bg,
+        "Second character '{}' should have selection background",
+        second_char_cell.symbol()
+    );
+
+    assert_eq!(
+        third_char_cell.bg,
+        selection_bg,
+        "Third character '{}' should have selection background",
+        third_char_cell.symbol()
+    );
+
+    // Also verify that the first character has the SAME background as the second
+    // (this is the core of the bug - they should be identical)
+    assert_eq!(
+        first_char_cell.bg,
+        second_char_cell.bg,
+        "BUG #614: First character '{}' bg {:?} differs from second character '{}' bg {:?}. \
+         All selected characters should have identical background colors.",
+        first_char_cell.symbol(),
+        first_char_cell.bg,
+        second_char_cell.symbol(),
+        second_char_cell.bg
+    );
+}
