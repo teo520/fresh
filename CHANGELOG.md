@@ -1,5 +1,29 @@
 # Release Notes
 
+## 0.1.72
+
+### Features
+
+* **Italian Locale**: Full Italian translation support added across the editor and all core plugins (@fdefilippo).
+* **Interactive Links in Popups**: Markdown popups (such as LSP hover) now support clickable hyperlinks (OSC 8). Clicking a link opens it in your default web browser (@Asuka-Minato).
+* **Sudo Save Fallback**: When saving a file fails due to insufficient permissions, the editor now offers to save using `sudo` (Linux/macOS) (#301).
+* **Improved Language Features**: Improved word navigation, auto-pairs, and multi-cursor behavior.
+
+### Bug Fixes
+
+* **LSP Hover Reliability**: Fixed multiple issues with hover popups, including race conditions during rapid mouse movement, incorrect positioning on empty lines, and popups triggering past the end of a line.
+* **Popup Scrollbar Drag**: You can now click and drag the scrollbar in popups (like hover and completion) to scroll through long content.
+* **Inlay Hint Positioning**: Corrected inlay hint placement in Rust files to prevent them from shifting line content (#626, @Asuka-Minato).
+* **Theme Editor Path Resolution**: Fixed a bug where the theme editor couldn't find the correct configuration directory on some systems.
+
+### Internal
+
+* **Error Handling**: Migrated to `anyhow` for more robust error tracking and backtraces.
+* **Plugin API**: Added `editor.getConfigDir()` and `editor.getThemesDir()` to the plugin API.
+* **Dependency Updates**: Bumped `clap` to 4.5.54.
+
+---
+
 ## 0.1.71
 
 ### Features
