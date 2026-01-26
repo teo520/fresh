@@ -475,11 +475,25 @@ impl MenuRenderer {
             })
             .collect();
 
+        // Track which menus are visible (based on their `when` condition)
+        let menu_visible: Vec<bool> = all_menus
+            .iter()
+            .map(|menu| match &menu.when {
+                Some(condition) => menu_state.context.get(condition),
+                None => true, // No condition = always visible
+            })
+            .collect();
+
         // Build spans for each menu label and track their areas
         let mut spans = Vec::new();
         let mut current_x = area.x;
 
         for (idx, menu) in all_menus.iter().enumerate() {
+            // Skip hidden menus
+            if !menu_visible[idx] {
+                continue;
+            }
+
             let is_active = menu_state.active_menu == Some(idx);
             let is_hovered =
                 matches!(hover_target, Some(crate::app::HoverTarget::MenuBarItem(i)) if *i == idx);
@@ -926,6 +940,7 @@ mod tests {
                         checkbox: None,
                     },
                 ],
+                when: None,
             },
             Menu {
                 id: None,
@@ -946,6 +961,7 @@ mod tests {
                         checkbox: None,
                     },
                 ],
+                when: None,
             },
             Menu {
                 id: None,
@@ -957,6 +973,7 @@ mod tests {
                     when: None,
                     checkbox: None,
                 }],
+                when: None,
             },
         ]
     }
@@ -1082,6 +1099,7 @@ mod tests {
                 when: Some(context_keys::HAS_SELECTION.to_string()),
                 checkbox: None,
             }],
+            when: None,
         };
         state.open_menu(0);
         state.highlighted_item = Some(0);
@@ -1374,6 +1392,7 @@ mod tests {
                     checkbox: None,
                 },
             ],
+            when: None,
         }]
     }
 

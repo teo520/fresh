@@ -45,4 +45,8 @@ pub struct Menu {
     pub label: String,
     /// Menu items (actions, separators, or submenus)
     pub items: Vec<MenuItem>,
+    /// Context condition for menu visibility (e.g., "file_explorer_focused")
+    /// If set, the menu is only shown when this condition evaluates to true
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub when: Option<String>,
 }

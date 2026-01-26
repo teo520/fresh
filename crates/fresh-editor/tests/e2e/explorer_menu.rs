@@ -367,18 +367,33 @@ fn test_explorer_menu_new_folder_action() {
     );
 }
 
-/// Test that Explorer menu appears in the menu bar
+/// Test that Explorer menu appears in the menu bar when file explorer is focused
 #[test]
 fn test_explorer_menu_in_menu_bar() {
-    let mut harness = EditorTestHarness::new(100, 30).unwrap();
+    let mut harness = EditorTestHarness::with_temp_project(100, 30).unwrap();
+
+    // Focus file explorer first (Explorer menu is only visible when file explorer is focused)
+    harness.editor_mut().focus_file_explorer();
+    harness.wait_for_file_explorer().unwrap();
     harness.render().unwrap();
 
     // Check that Explorer appears in the menu bar
     let menu_bar = harness.get_menu_bar();
     assert!(
         menu_bar.contains("Explorer"),
-        "Menu bar should contain 'Explorer'. Menu bar: {}",
+        "Menu bar should contain 'Explorer' when file explorer is focused. Menu bar: {}",
         menu_bar
+    );
+
+    // Focus editor and check that Explorer menu is hidden
+    harness.editor_mut().focus_editor();
+    harness.render().unwrap();
+
+    let menu_bar_after = harness.get_menu_bar();
+    assert!(
+        !menu_bar_after.contains("Explorer"),
+        "Menu bar should NOT contain 'Explorer' when file explorer is not focused. Menu bar: {}",
+        menu_bar_after
     );
 }
 

@@ -501,6 +501,18 @@ pub struct EditorConfig {
     #[schemars(extend("x-section" = "Editing"))]
     pub default_line_ending: LineEndingOption,
 
+    /// Remove trailing whitespace from lines when saving.
+    /// Default: false
+    #[serde(default = "default_false")]
+    #[schemars(extend("x-section" = "Editing"))]
+    pub trim_trailing_whitespace_on_save: bool,
+
+    /// Ensure files end with a newline when saving.
+    /// Default: false
+    #[serde(default = "default_false")]
+    #[schemars(extend("x-section" = "Editing"))]
+    pub ensure_final_newline_on_save: bool,
+
     // ===== Completion =====
     /// Enable quick suggestions (VS Code-like behavior).
     /// When enabled, completion suggestions appear automatically while typing,
@@ -767,6 +779,8 @@ impl Default for EditorConfig {
             auto_revert_poll_interval_ms: default_auto_revert_poll_interval(),
             file_tree_poll_interval_ms: default_file_tree_poll_interval(),
             default_line_ending: LineEndingOption::default(),
+            trim_trailing_whitespace_on_save: false,
+            ensure_final_newline_on_save: false,
             cursor_style: CursorStyle::default(),
             keyboard_disambiguate_escape_codes: true,
             keyboard_report_event_types: false,
@@ -1321,6 +1335,7 @@ impl MenuConfig {
             Menu {
                 id: Some("File".to_string()),
                 label: t!("menu.file").to_string(),
+                when: None,
                 items: vec![
                     MenuItem::Action {
                         label: t!("menu.file.new_file").to_string(),
@@ -1387,6 +1402,7 @@ impl MenuConfig {
             Menu {
                 id: Some("Edit".to_string()),
                 label: t!("menu.edit").to_string(),
+                when: None,
                 items: vec![
                     MenuItem::Action {
                         label: t!("menu.edit.undo").to_string(),
@@ -1493,6 +1509,7 @@ impl MenuConfig {
             Menu {
                 id: Some("View".to_string()),
                 label: t!("menu.view").to_string(),
+                when: None,
                 items: vec![
                     MenuItem::Action {
                         label: t!("menu.view.file_explorer").to_string(),
@@ -1690,6 +1707,7 @@ impl MenuConfig {
             Menu {
                 id: Some("Selection".to_string()),
                 label: t!("menu.selection").to_string(),
+                when: None,
                 items: vec![
                     MenuItem::Action {
                         label: t!("menu.selection.select_all").to_string(),
@@ -1754,6 +1772,7 @@ impl MenuConfig {
             Menu {
                 id: Some("Go".to_string()),
                 label: t!("menu.go").to_string(),
+                when: None,
                 items: vec![
                     MenuItem::Action {
                         label: t!("menu.go.goto_line").to_string(),
@@ -1805,6 +1824,7 @@ impl MenuConfig {
             Menu {
                 id: Some("LSP".to_string()),
                 label: t!("menu.lsp").to_string(),
+                when: None,
                 items: vec![
                     MenuItem::Action {
                         label: t!("menu.lsp.show_hover").to_string(),
@@ -1888,10 +1908,11 @@ impl MenuConfig {
                     },
                 ],
             },
-            // Explorer menu
+            // Explorer menu (only visible when file explorer is focused)
             Menu {
                 id: Some("Explorer".to_string()),
                 label: t!("menu.explorer").to_string(),
+                when: Some(context_keys::FILE_EXPLORER_FOCUSED.to_string()),
                 items: vec![
                     MenuItem::Action {
                         label: t!("menu.explorer.new_file").to_string(),
@@ -1958,6 +1979,7 @@ impl MenuConfig {
             Menu {
                 id: Some("Help".to_string()),
                 label: t!("menu.help").to_string(),
+                when: None,
                 items: vec![
                     MenuItem::Label {
                         info: format!("Fresh v{}", env!("CARGO_PKG_VERSION")),

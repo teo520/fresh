@@ -145,6 +145,7 @@ mod tests {
                         checkbox: None,
                     },
                 ],
+                when: None,
             },
             Menu {
                 id: None,
@@ -165,6 +166,7 @@ mod tests {
                         checkbox: None,
                     },
                 ],
+                when: None,
             },
         ]
     }
