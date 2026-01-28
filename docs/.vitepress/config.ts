@@ -4,11 +4,11 @@ export default defineConfig({
   title: "Fresh",
   description:
     "Fresh is a fast, modern terminal text editor with intuitive keybindings, syntax highlighting, and instant startup.",
-  base: "/fresh/docs/",
+  base: "/docs/",
   srcDir: ".",
   outDir: "../dist/docs",
 
-  head: [["link", { rel: "icon", href: "/fresh/docs/logo.svg" }]],
+  head: [["link", { rel: "icon", href: "/docs/logo.svg" }]],
 
   cleanUrls: true,
   lastUpdated: true,
@@ -17,7 +17,7 @@ export default defineConfig({
     logo: { light: "/logo.svg", dark: "/logo.svg" },
 
     nav: [
-      { text: "Homepage", link: "https://sinelaw.github.io/fresh" },
+      { text: "Homepage", link: "https://getfresh.dev" },
       { text: "Getting Started", link: "/getting-started" },
       { text: "Download", link: "https://github.com/sinelaw/fresh/releases/latest" },
     ],
