@@ -52,7 +52,7 @@ jobs:
       - name: Upload artifacts
         uses: actions/upload-artifact@v6
         with:
-          name: fresh-editor-freebsd
+          name: artifacts-x86_64-unknown-freebsd
           path: |
             fresh-editor-x86_64-unknown-freebsd.tar.xz
             fresh-editor-x86_64-unknown-freebsd.tar.xz.sha256
