@@ -4836,6 +4836,94 @@ mod tests {
             Ok(())
         }
     }
+
+    mod large_file_encoding_tests {
+        use super::*;
+
+        #[test]
+        fn test_large_file_encoding_confirmation_display() {
+            let confirmation = LargeFileEncodingConfirmation {
+                path: PathBuf::from("/test/file.txt"),
+                file_size: 150 * 1024 * 1024, // 150 MB
+                encoding: Encoding::ShiftJis,
+            };
+
+            let display = format!("{}", confirmation);
+            assert!(display.contains("150.0 MB"));
+            assert!(display.contains("Shift-JIS"));
+            assert!(display.contains("entire file into memory"));
+        }
+
+        #[test]
+        fn test_large_file_encoding_confirmation_equality() {
+            let a = LargeFileEncodingConfirmation {
+                path: PathBuf::from("/test/file.txt"),
+                file_size: 100 * 1024 * 1024,
+                encoding: Encoding::Gb18030,
+            };
+            let b = LargeFileEncodingConfirmation {
+                path: PathBuf::from("/test/file.txt"),
+                file_size: 100 * 1024 * 1024,
+                encoding: Encoding::Gb18030,
+            };
+            let c = LargeFileEncodingConfirmation {
+                path: PathBuf::from("/test/other.txt"),
+                file_size: 100 * 1024 * 1024,
+                encoding: Encoding::Gb18030,
+            };
+
+            assert_eq!(a, b);
+            assert_ne!(a, c);
+        }
+
+        #[test]
+        fn test_encoding_requires_confirmation() {
+            // Resynchronizable encodings should NOT require confirmation
+            assert!(!Encoding::Utf8.requires_full_file_load());
+            assert!(!Encoding::Utf8Bom.requires_full_file_load());
+            assert!(!Encoding::Ascii.requires_full_file_load());
+            assert!(!Encoding::Latin1.requires_full_file_load());
+            assert!(!Encoding::Windows1252.requires_full_file_load());
+            assert!(!Encoding::Utf16Le.requires_full_file_load());
+            assert!(!Encoding::Utf16Be.requires_full_file_load());
+
+            // Non-resynchronizable CJK encodings SHOULD require confirmation
+            assert!(Encoding::Gb18030.requires_full_file_load());
+            assert!(Encoding::Gbk.requires_full_file_load());
+            assert!(Encoding::ShiftJis.requires_full_file_load());
+            assert!(Encoding::EucKr.requires_full_file_load());
+        }
+
+        #[test]
+        fn test_check_large_file_encoding_small_file() {
+            use tempfile::NamedTempFile;
+
+            // Create a small file (well under threshold)
+            let temp = NamedTempFile::new().unwrap();
+            std::fs::write(temp.path(), b"hello world").unwrap();
+
+            let result = TextBuffer::check_large_file_encoding(temp.path(), test_fs()).unwrap();
+            assert!(
+                result.is_none(),
+                "Small files should not require confirmation"
+            );
+        }
+
+        #[test]
+        fn test_large_file_encoding_error_downcast() {
+            // Verify that LargeFileEncodingConfirmation can be used as an anyhow error
+            let confirmation = LargeFileEncodingConfirmation {
+                path: PathBuf::from("/test/file.txt"),
+                file_size: 200 * 1024 * 1024,
+                encoding: Encoding::EucKr,
+            };
+
+            let error: anyhow::Error = confirmation.clone().into();
+            let downcast = error.downcast_ref::<LargeFileEncodingConfirmation>();
+            assert!(downcast.is_some());
+            assert_eq!(downcast.unwrap().encoding, Encoding::EucKr);
+        }
+    }
 }
 
 #[cfg(test)]
